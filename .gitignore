@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Logs and pid files
+*.log
+*.pid
+
+# OS files
+.DS_Store
+
+# Local git backup
+.git_backup_*/
