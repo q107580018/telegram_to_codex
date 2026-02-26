@@ -36,6 +36,12 @@ cp .env.example .env
 启动后在 Telegram 给你的机器人发消息即可。
 前台运行：关闭终端或按 `Ctrl+C` 会结束进程。
 
+## macOS 控制器 App
+
+- `BotControl.app` 为自包含控制器，会内置 `bot.py/.env/requirements` 资源。
+- 首次启动会自动在 `~/Library/Application Support/BotControl/runtime` 初始化运行环境。
+- App 内可一键启动/停止，关闭窗口会自动停止 bot。
+
 ## 命令
 
 - `/start` 开始
