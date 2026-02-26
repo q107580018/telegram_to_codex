@@ -30,6 +30,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 CONFIG = load_config()
+# 项目目录由服务对象统一管理，支持运行时切换并持久化到 .env。
 project_service = ProjectService(
     initial_project_dir=CONFIG.codex_project_dir,
     env_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
@@ -60,11 +61,13 @@ def is_allowed(update: Update) -> bool:
 
 
 def trim_history(history: List[dict]) -> None:
+    # 历史按「用户+助手」成对裁剪，防止 prompt 无限增大。
     if len(history) > MAX_TURNS * 2:
         history[:] = history[-MAX_TURNS * 2 :]
 
 
 def append_command_history(chat_id: int, command_text: str, reply_text: str) -> None:
+    # 将 slash 命令也写入上下文，便于用户基于命令输出继续追问。
     history = chat_histories[chat_id]
     history.append({"role": "user", "content": command_text})
     history.append({"role": "assistant", "content": reply_text})
@@ -121,6 +124,7 @@ async def skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def runtime_config():
+    # 每次请求都基于当前目录生成配置，确保切目录后立即生效。
     return replace(CONFIG, codex_project_dir=project_service.project_dir)
 
 
@@ -209,6 +213,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     status_msg = await send_message_with_retry(update, "已收到，正在思考中，请稍等...")
     stop_typing_event = asyncio.Event()
+    # 长请求期间持续发送 typing，避免 Telegram 侧看起来“无响应”。
     typing_task = asyncio.create_task(keep_typing(update, stop_typing_event))
 
     try:

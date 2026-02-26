@@ -12,6 +12,7 @@ class ProjectService:
         return self._project_dir
 
     def set_project_dir(self, raw_path: str) -> tuple[str, bool, str]:
+        # 支持 "~" 与相对路径输入，统一归一化为绝对目录。
         new_path = os.path.abspath(os.path.expanduser(raw_path.strip()))
         created = False
 
@@ -22,6 +23,7 @@ class ProjectService:
             raise ValueError(f"路径不是目录：{new_path}")
 
         self._project_dir = new_path
+        # 切换成功后同步写回 .env，保证重启后仍使用该目录。
         env_path = self._persist_project_dir_to_env(new_path)
         return new_path, created, env_path
 
@@ -32,6 +34,7 @@ class ProjectService:
         return value
 
     def _persist_project_dir_to_env(self, new_path: str) -> str:
+        # 优先覆盖现有 CODEX_PROJECT_DIR，没有则追加新项。
         key_pattern = re.compile(r"^\s*CODEX_PROJECT_DIR\s*=")
         new_line = f"CODEX_PROJECT_DIR={self._env_value_for_write(new_path)}\n"
 

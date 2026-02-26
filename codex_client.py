@@ -48,6 +48,7 @@ def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
 
     reply = ""
     meta: dict = {}
+    # codex --json 为 JSONL 流；非 JSON 行（日志/告警）直接忽略。
     for raw_line in (result.stdout or "").splitlines():
         line = raw_line.strip()
         if not line or not line.startswith("{"):
@@ -59,6 +60,7 @@ def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
         if evt.get("type") == "thread.started":
             meta["thread_id"] = evt.get("thread_id", "")
         elif evt.get("type") == "turn.completed":
+            # 保留 token 使用信息，供后续状态展示或诊断。
             usage = evt.get("usage") or {}
             meta["usage"] = {
                 "input_tokens": usage.get("input_tokens"),
@@ -66,6 +68,7 @@ def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
                 "output_tokens": usage.get("output_tokens"),
             }
         elif evt.get("type") == "item.completed":
+            # 以最后一条 agent_message 作为本轮最终答复文本。
             item = evt.get("item") or {}
             if item.get("type") == "agent_message":
                 reply = item.get("text", "") or reply
