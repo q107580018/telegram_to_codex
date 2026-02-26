@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import subprocess
 from collections import defaultdict
 from typing import Dict, List
@@ -28,6 +29,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CODEX_MODEL = os.getenv("CODEX_MODEL", "").strip()
+CODEX_BIN_RAW = os.getenv("CODEX_BIN", "codex").strip()
 TELEGRAM_PROXY_URL = os.getenv("TELEGRAM_PROXY_URL", "").strip()
 CODEX_SANDBOX = os.getenv("CODEX_SANDBOX", "danger-full-access").strip()
 CODEX_ADD_DIRS_RAW = os.getenv("CODEX_ADD_DIRS", "/Users/mac/Desktop").strip()
@@ -53,6 +55,23 @@ SYSTEM_PROMPT = (
 )
 
 
+def resolve_codex_bin() -> str:
+    if os.path.isabs(CODEX_BIN_RAW):
+        return CODEX_BIN_RAW
+    found = shutil.which(CODEX_BIN_RAW)
+    if found:
+        return found
+    for candidate in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"]:
+        if os.path.exists(candidate):
+            return candidate
+    raise RuntimeError(
+        "codex command not found. Please set CODEX_BIN in .env, e.g. /usr/local/bin/codex"
+    )
+
+
+CODEX_BIN = resolve_codex_bin()
+
+
 def build_prompt(history: List[dict]) -> str:
     lines = [SYSTEM_PROMPT, "", "Conversation so far:"]
     for msg in history:
@@ -64,7 +83,7 @@ def build_prompt(history: List[dict]) -> str:
 
 
 def ask_codex(prompt: str) -> str:
-    cmd = ["codex", "exec", "--skip-git-repo-check"]
+    cmd = [CODEX_BIN, "exec", "--skip-git-repo-check"]
     if CODEX_SANDBOX:
         cmd.extend(["--sandbox", CODEX_SANDBOX])
     if CODEX_ADD_DIRS_RAW:
