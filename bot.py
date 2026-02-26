@@ -7,7 +7,8 @@ from collections import defaultdict
 from typing import Dict, List
 
 from dotenv import load_dotenv
-from telegram import BotCommand, Update
+from telegram.error import NetworkError, TimedOut
+from telegram import BotCommand, Message, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -30,6 +31,10 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 CODEX_MODEL = os.getenv("CODEX_MODEL", "").strip()
 CODEX_BIN_RAW = os.getenv("CODEX_BIN", "codex").strip()
+CODEX_PROJECT_DIR = os.path.expanduser(
+    os.getenv("CODEX_PROJECT_DIR", "~/Documents/BotControlWorkspace").strip()
+)
+CODEX_TIMEOUT_SEC = int(os.getenv("CODEX_TIMEOUT_SEC", "600").strip())
 TELEGRAM_PROXY_URL = os.getenv("TELEGRAM_PROXY_URL", "").strip()
 CODEX_SANDBOX = os.getenv("CODEX_SANDBOX", "danger-full-access").strip()
 CODEX_ADD_DIRS_RAW = os.getenv("CODEX_ADD_DIRS", "/Users/mac/Desktop").strip()
@@ -70,6 +75,7 @@ def resolve_codex_bin() -> str:
 
 
 CODEX_BIN = resolve_codex_bin()
+os.makedirs(CODEX_PROJECT_DIR, exist_ok=True)
 
 
 def build_prompt(history: List[dict]) -> str:
@@ -84,6 +90,8 @@ def build_prompt(history: List[dict]) -> str:
 
 def ask_codex(prompt: str) -> str:
     cmd = [CODEX_BIN, "exec", "--skip-git-repo-check"]
+    if CODEX_PROJECT_DIR:
+        cmd.extend(["--cd", CODEX_PROJECT_DIR])
     if CODEX_SANDBOX:
         cmd.extend(["--sandbox", CODEX_SANDBOX])
     if CODEX_ADD_DIRS_RAW:
@@ -97,7 +105,7 @@ def ask_codex(prompt: str) -> str:
         cmd + [prompt],
         capture_output=True,
         text=True,
-        timeout=180,
+        timeout=CODEX_TIMEOUT_SEC,
         check=False,
     )
     if result.returncode != 0:
@@ -111,6 +119,45 @@ def ask_codex(prompt: str) -> str:
     return reply
 
 
+async def reply_text_with_retry(update: Update, text: str) -> None:
+    for i in range(3):
+        try:
+            await update.message.reply_text(text)
+            return
+        except (TimedOut, NetworkError) as exc:
+            if i == 2:
+                raise
+            wait_sec = 0.8 * (2**i)
+            logger.warning("Telegram reply timeout/network error, retrying in %.1fs: %s", wait_sec, exc)
+            await asyncio.sleep(wait_sec)
+
+
+async def send_message_with_retry(update: Update, text: str) -> Message | None:
+    for i in range(3):
+        try:
+            return await update.message.reply_text(text)
+        except (TimedOut, NetworkError) as exc:
+            if i == 2:
+                logger.warning("Telegram send message failed after retries: %s", exc)
+                return None
+            wait_sec = 0.8 * (2**i)
+            logger.warning("Telegram send message timeout/network error, retrying in %.1fs: %s", wait_sec, exc)
+            await asyncio.sleep(wait_sec)
+    return None
+
+
+async def keep_typing(update: Update, stop_event: asyncio.Event) -> None:
+    while not stop_event.is_set():
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=4.0)
+        except asyncio.TimeoutError:
+            continue
+
+
 def is_allowed(update: Update) -> bool:
     if not allowed_user_ids:
         return True
@@ -120,9 +167,10 @@ def is_allowed(update: Update) -> bool:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
-        await update.message.reply_text("你没有权限使用这个 bot。")
+        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
-    await update.message.reply_text(
+    await reply_text_with_retry(
+        update,
         "已连接 Codex。直接发消息即可对话。\n"
         "命令：/reset 清空上下文"
     )
@@ -130,11 +178,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
-        await update.message.reply_text("你没有权限使用这个 bot。")
+        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
     chat_id = update.effective_chat.id
     chat_histories[chat_id] = []
-    await update.message.reply_text("上下文已清空。")
+    await reply_text_with_retry(update, "上下文已清空。")
 
 
 async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,7 +201,7 @@ async def post_init(app) -> None:
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
-        await update.message.reply_text("你没有权限使用这个 bot。")
+        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
 
     if not update.message or not update.message.text:
@@ -164,17 +212,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not user_text:
         return
 
-    try:
-        await update.message.chat.send_action("typing")
-    except Exception:
-        # typing 状态发送失败不影响主流程
-        pass
-
     history = chat_histories[chat_id]
     history.append({"role": "user", "content": user_text})
 
     if len(history) > MAX_TURNS * 2:
         history[:] = history[-MAX_TURNS * 2 :]
+
+    status_msg = await send_message_with_retry(update, "已收到，正在思考中，请稍等...")
+    stop_typing_event = asyncio.Event()
+    typing_task = asyncio.create_task(keep_typing(update, stop_typing_event))
 
     try:
         prompt = build_prompt(history)
@@ -185,11 +231,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Telegram 单条消息限制约 4096 字符
         chunk_size = 3900
         for i in range(0, len(reply_text), chunk_size):
-            await update.message.reply_text(reply_text[i : i + chunk_size])
+            await reply_text_with_retry(update, reply_text[i : i + chunk_size])
+        if status_msg:
+            try:
+                await status_msg.delete()
+            except Exception:
+                pass
 
     except Exception as exc:
         logger.exception("Codex request failed")
-        await update.message.reply_text(f"请求失败：{exc}")
+        if status_msg:
+            try:
+                await status_msg.edit_text("处理失败，正在返回错误信息。")
+            except Exception:
+                pass
+        await reply_text_with_retry(update, f"请求失败：{exc}")
+    finally:
+        stop_typing_event.set()
+        await typing_task
 
 
 def main() -> None:
