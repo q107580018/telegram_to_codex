@@ -12,7 +12,7 @@ from telegram.ext import (
     filters,
 )
 
-from codex_client import ask_codex, build_prompt
+from codex_client import ask_codex, build_prompt, get_codex_status
 from config import load_config
 from skills import list_available_skills
 from telegram_io import keep_typing, reply_text_with_retry, send_message_with_retry
@@ -59,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text_with_retry(
         update,
         "已连接 Codex。直接发消息即可对话。\n"
-        "命令：/reset 清空上下文，/skills 查看可用技能"
+        "命令：/reset 清空上下文，/skills 查看可用技能，/status 查看 Codex 状态"
     )
 
 
@@ -88,12 +88,25 @@ async def skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text_with_retry(update, "\n".join(lines))
 
 
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not is_allowed(update):
+        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
+        return
+    try:
+        status_text = await asyncio.to_thread(get_codex_status, CONFIG)
+    except Exception as exc:
+        await reply_text_with_retry(update, f"状态检查失败：{exc}")
+        return
+    await reply_text_with_retry(update, status_text)
+
+
 async def post_init(app) -> None:
     await app.bot.set_my_commands(
         [
             BotCommand("new", "新建对话（清空上下文）"),
             BotCommand("reset", "清空上下文"),
             BotCommand("skills", "查看可用 skills"),
+            BotCommand("status", "查看 Codex 状态"),
             BotCommand("start", "显示帮助"),
         ]
     )
@@ -167,6 +180,7 @@ def main() -> None:
     app.add_handler(CommandHandler("new", new_chat))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("skills", skills))
+    app.add_handler(CommandHandler("status", status))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("Bot is running with model: %s", CONFIG.codex_model or "default codex config")
