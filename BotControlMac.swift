@@ -232,7 +232,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "初始化失败：读取资源目录失败"
         }
         let bundleRuntime = resourceURL.appendingPathComponent("BotRuntime")
-        let runtimeFiles = ["bot.py", "requirements.txt", ".env", ".env.example"]
+        let runtimeFiles = [
+            "bot.py",
+            "requirements.txt",
+            ".env",
+            ".env.example",
+            "config.py",
+            "codex_client.py",
+            "telegram_io.py",
+            "skills.py",
+        ]
 
         for name in runtimeFiles {
             let src = bundleRuntime.appendingPathComponent(name).path
