@@ -129,9 +129,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         primaryButton.frame = NSRect(x: 24, y: 125, width: 120, height: 36)
         content.addSubview(primaryButton)
 
-        let opBtn = makeButton(title: "操作", action: #selector(opTapped))
-        opBtn.frame = NSRect(x: 156, y: 125, width: 120, height: 36)
-        content.addSubview(opBtn)
+        let refreshBtn = makeButton(title: "刷新状态", action: #selector(refreshMenuTapped))
+        refreshBtn.frame = NSRect(x: 156, y: 125, width: 120, height: 36)
+        content.addSubview(refreshBtn)
+
+        let logBtn = makeButton(title: "查看日志", action: #selector(openLogTapped))
+        logBtn.frame = NSRect(x: 288, y: 125, width: 120, height: 36)
+        content.addSubview(logBtn)
 
         let hint = NSTextField(labelWithString: "关闭窗口会自动停止 bot")
         hint.font = NSFont.systemFont(ofSize: 12)
@@ -179,13 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.primaryButton.isEnabled = true
             }
         }
-    }
-
-    @objc private func opTapped() {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "刷新状态", action: #selector(refreshMenuTapped), keyEquivalent: "")
-        menu.addItem(withTitle: "查看日志", action: #selector(openLogTapped), keyEquivalent: "")
-        menu.popUp(positioning: nil, at: NSPoint(x: 156, y: 120), in: window.contentView)
     }
 
     @objc private func refreshMenuTapped() {
@@ -239,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ".env.example",
             "config.py",
             "codex_client.py",
+            "project_service.py",
             "telegram_io.py",
             "skills.py",
         ]

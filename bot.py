@@ -6,6 +6,7 @@ from typing import Dict, List
 from dataclasses import replace
 
 from telegram import BotCommand, Update
+from telegram.error import Conflict
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -46,6 +47,7 @@ if CONFIG.allowed_user_ids_raw:
 # 简单内存会话：按 chat_id 保存最近消息，避免上下文无限增长
 chat_histories: Dict[int, List[dict]] = defaultdict(list)
 MAX_TURNS = 12
+CODEX_MAX_RETRIES = 3
 
 SYSTEM_PROMPT = (
     "You are Codex, a pragmatic coding assistant. "
@@ -128,6 +130,20 @@ def runtime_config():
     return replace(CONFIG, codex_project_dir=project_service.project_dir)
 
 
+async def ask_codex_with_retry(prompt: str) -> str:
+    # Codex 子进程在瞬时抖动时可能失败，这里做有限次重试。
+    last_exc: Exception | None = None
+    for attempt in range(CODEX_MAX_RETRIES):
+        try:
+            return await asyncio.to_thread(ask_codex, runtime_config(), prompt)
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= CODEX_MAX_RETRIES - 1:
+                break
+            await asyncio.sleep(1.0 * (2**attempt))
+    raise RuntimeError(str(last_exc) if last_exc else "codex request failed")
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
@@ -191,6 +207,15 @@ async def post_init(app) -> None:
     )
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    err = context.error
+    if isinstance(err, Conflict):
+        logger.error("Telegram 冲突：检测到同一 token 的重复轮询实例，当前进程将停止。")
+        await context.application.stop()
+        return
+    logger.exception("Unhandled bot error", exc_info=err)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
@@ -218,7 +243,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         prompt = build_prompt(SYSTEM_PROMPT, history)
-        reply_text = await asyncio.to_thread(ask_codex, runtime_config(), prompt)
+        reply_text = await ask_codex_with_retry(prompt)
 
         history.append({"role": "assistant", "content": reply_text})
         logger.info("[chat:%s user:%s] ASSISTANT: %s", chat_id, user_id, reply_text)
@@ -261,6 +286,7 @@ def main() -> None:
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("setproject", setproject))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(on_error)
 
     logger.info("Bot is running with model: %s", CONFIG.codex_model or "default codex config")
     app.run_polling(timeout=30, bootstrap_retries=-1)
