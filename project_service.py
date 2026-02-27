@@ -11,6 +11,10 @@ class ProjectService:
     def project_dir(self) -> str:
         return self._project_dir
 
+    @property
+    def env_path(self) -> str:
+        return self._env_path
+
     def set_project_dir(self, raw_path: str) -> tuple[str, bool, str]:
         # 支持 "~" 与相对路径输入，统一归一化为绝对目录。
         new_path = os.path.abspath(os.path.expanduser(raw_path.strip()))
@@ -61,3 +65,24 @@ class ProjectService:
         with open(self._env_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
         return self._env_path
+
+    def read_env_project_dir(self) -> str:
+        if not os.path.exists(self._env_path):
+            return ""
+        key_pattern = re.compile(r"^\s*CODEX_PROJECT_DIR\s*=(.*)$")
+        try:
+            with open(self._env_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return ""
+        for line in lines:
+            if line.lstrip().startswith("#"):
+                continue
+            match = key_pattern.match(line)
+            if not match:
+                continue
+            value = match.group(1).strip()
+            if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+                value = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+            return value
+        return ""
