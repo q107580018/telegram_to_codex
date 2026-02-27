@@ -110,3 +110,24 @@ def get_codex_status(config: AppConfig) -> str:
     lines.append(f"- 沙箱：{config.codex_sandbox or 'default'}")
     lines.append(f"- 可写目录：{config.codex_add_dirs_raw or '(none)'}")
     return "\n".join(lines)
+
+
+def get_codex_runtime_info(config: AppConfig) -> dict:
+    def run_cmd(cmd: list[str], timeout: int = 15) -> tuple[int, str]:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        output = (result.stdout or "").strip() or (result.stderr or "").strip()
+        return result.returncode, output
+
+    version_code, version_out = run_cmd([config.codex_bin, "--version"], timeout=8)
+    login_code, login_out = run_cmd([config.codex_bin, "login", "status"], timeout=12)
+    return {
+        "version": version_out if version_code == 0 else "",
+        "login": login_out if login_code == 0 else "",
+        "model": config.codex_model or "default",
+    }

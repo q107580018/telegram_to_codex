@@ -16,7 +16,11 @@ from telegram.ext import (
     filters,
 )
 
-from codex_client import ask_codex, build_prompt, get_codex_status
+from codex_client import (
+    ask_codex_with_meta,
+    build_prompt,
+    get_codex_runtime_info,
+)
 from config import load_config
 from project_service import ProjectService
 from skills import list_available_skills
@@ -50,6 +54,7 @@ if CONFIG.allowed_user_ids_raw:
 
 # 简单内存会话：按 chat_id 保存最近消息，避免上下文无限增长
 chat_histories: Dict[int, List[dict]] = defaultdict(list)
+chat_usage_stats: Dict[int, dict] = defaultdict(dict)
 MAX_TURNS = 12
 CODEX_MAX_RETRIES = 3
 CHAT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_histories.json")
@@ -126,6 +131,21 @@ def append_command_history(chat_id: int, command_text: str, reply_text: str) -> 
     save_chat_histories()
 
 
+def update_usage_stats(chat_id: int, usage: dict) -> None:
+    if not isinstance(usage, dict):
+        return
+    input_tokens = int(usage.get("input_tokens") or 0)
+    cached_input_tokens = int(usage.get("cached_input_tokens") or 0)
+    output_tokens = int(usage.get("output_tokens") or 0)
+    stats = chat_usage_stats[chat_id]
+    stats["last_input_tokens"] = input_tokens
+    stats["last_cached_input_tokens"] = cached_input_tokens
+    stats["last_output_tokens"] = output_tokens
+    stats["total_input_tokens"] = int(stats.get("total_input_tokens") or 0) + input_tokens
+    stats["total_cached_input_tokens"] = int(stats.get("total_cached_input_tokens") or 0) + cached_input_tokens
+    stats["total_output_tokens"] = int(stats.get("total_output_tokens") or 0) + output_tokens
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
@@ -181,12 +201,12 @@ def runtime_config():
     return replace(CONFIG, codex_project_dir=project_service.project_dir)
 
 
-async def ask_codex_with_retry(prompt: str) -> str:
+async def ask_codex_with_retry(prompt: str) -> tuple[str, dict]:
     # Codex 子进程在瞬时抖动时可能失败，这里做有限次重试。
     last_exc: Exception | None = None
     for attempt in range(CODEX_MAX_RETRIES):
         try:
-            return await asyncio.to_thread(ask_codex, runtime_config(), prompt)
+            return await asyncio.to_thread(ask_codex_with_meta, runtime_config(), prompt)
         except Exception as exc:
             last_exc = exc
             if attempt >= CODEX_MAX_RETRIES - 1:
@@ -199,15 +219,35 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
+    chat_id = update.effective_chat.id
     try:
-        status_text = await asyncio.to_thread(get_codex_status, runtime_config())
+        runtime_info = await asyncio.to_thread(get_codex_runtime_info, runtime_config())
     except Exception as exc:
         reply = f"状态检查失败：{exc}"
         await reply_text_with_retry(update, reply)
-        append_command_history(update.effective_chat.id, "/status", reply)
+        append_command_history(chat_id, "/status", reply)
         return
-    await reply_text_with_retry(update, status_text)
-    append_command_history(update.effective_chat.id, "/status", status_text)
+
+    usage = chat_usage_stats.get(chat_id) or {}
+    reply = (
+        "当前会话状态：\n"
+        "Token Usage:\n"
+        f"- Last: in={usage.get('last_input_tokens', 0)}, "
+        f"cached={usage.get('last_cached_input_tokens', 0)}, "
+        f"out={usage.get('last_output_tokens', 0)}\n"
+        f"- Total: in={usage.get('total_input_tokens', 0)}, "
+        f"cached={usage.get('total_cached_input_tokens', 0)}, "
+        f"out={usage.get('total_output_tokens', 0)}\n"
+        "Context Left:\n"
+        "- 当前 codex exec --json 未暴露 context left 百分比\n"
+        "Plan/Model:\n"
+        f"- Plan: {runtime_info.get('login') or 'unknown'}\n"
+        f"- Model: {runtime_info.get('model')}\n"
+        f"- CLI: {runtime_info.get('version') or 'unknown'}"
+    )
+
+    await reply_text_with_retry(update, reply)
+    append_command_history(chat_id, "/status", reply)
 
 
 async def setproject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -337,7 +377,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     try:
         prompt = build_prompt(SYSTEM_PROMPT, history)
-        reply_text = await ask_codex_with_retry(prompt)
+        reply_text, meta = await ask_codex_with_retry(prompt)
+        usage = (meta or {}).get("usage") if isinstance(meta, dict) else {}
+        update_usage_stats(chat_id, usage if isinstance(usage, dict) else {})
 
         history.append({"role": "assistant", "content": reply_text})
         save_chat_histories()
