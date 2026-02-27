@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from collections import defaultdict
@@ -48,6 +49,7 @@ if CONFIG.allowed_user_ids_raw:
 chat_histories: Dict[int, List[dict]] = defaultdict(list)
 MAX_TURNS = 12
 CODEX_MAX_RETRIES = 3
+CHAT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_histories.json")
 
 SYSTEM_PROMPT = (
     "You are Codex, a pragmatic coding assistant. "
@@ -68,12 +70,51 @@ def trim_history(history: List[dict]) -> None:
         history[:] = history[-MAX_TURNS * 2 :]
 
 
+def save_chat_histories() -> None:
+    data = {}
+    for chat_id, history in chat_histories.items():
+        data[str(chat_id)] = history[-MAX_TURNS * 2 :]
+    with open(CHAT_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def load_chat_histories() -> None:
+    if not os.path.exists(CHAT_HISTORY_FILE):
+        return
+    try:
+        with open(CHAT_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:
+        logger.warning("加载历史上下文失败：%s", exc)
+        return
+
+    for raw_chat_id, history in data.items():
+        try:
+            chat_id = int(raw_chat_id)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(history, list):
+            continue
+        valid_history = []
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            if role in ("user", "assistant") and isinstance(content, str):
+                valid_history.append({"role": role, "content": content})
+        trim_history(valid_history)
+        if valid_history:
+            chat_histories[chat_id] = valid_history
+
+
 def append_command_history(chat_id: int, command_text: str, reply_text: str) -> None:
     # 将 slash 命令也写入上下文，便于用户基于命令输出继续追问。
     history = chat_histories[chat_id]
     history.append({"role": "user", "content": command_text})
     history.append({"role": "assistant", "content": reply_text})
     trim_history(history)
+    save_chat_histories()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -93,6 +134,7 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     chat_id = update.effective_chat.id
     chat_histories[chat_id] = []
+    save_chat_histories()
     reply = "上下文已清空。"
     await reply_text_with_retry(update, reply)
     append_command_history(chat_id, "/reset", reply)
@@ -104,6 +146,7 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     chat_id = update.effective_chat.id
     chat_histories[chat_id] = []
+    save_chat_histories()
     reply = "已新建对话并清空上下文。"
     await reply_text_with_retry(update, reply)
     append_command_history(chat_id, "/new", reply)
@@ -235,6 +278,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     history = chat_histories[chat_id]
     history.append({"role": "user", "content": user_text})
     trim_history(history)
+    save_chat_histories()
 
     status_msg = await send_message_with_retry(update, "已收到，正在思考中，请稍等...")
     stop_typing_event = asyncio.Event()
@@ -246,6 +290,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_text = await ask_codex_with_retry(prompt)
 
         history.append({"role": "assistant", "content": reply_text})
+        save_chat_histories()
         logger.info("[chat:%s user:%s] ASSISTANT: %s", chat_id, user_id, reply_text)
 
         # Telegram 单条消息限制约 4096 字符
@@ -273,6 +318,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def main() -> None:
+    load_chat_histories()
+
     builder = ApplicationBuilder().token(CONFIG.telegram_bot_token)
     if CONFIG.telegram_proxy_url:
         builder = builder.proxy(CONFIG.telegram_proxy_url).get_updates_proxy(CONFIG.telegram_proxy_url)

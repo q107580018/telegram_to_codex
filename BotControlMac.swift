@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appName = "BotControl"
 
     private var window: NSWindow!
+    private var logWindow: NSWindow?
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
@@ -190,7 +191,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openLogTapped() {
-        NSWorkspace.shared.open(URL(fileURLWithPath: logPath))
+        showLogWindow()
+    }
+
+    private func showLogWindow() {
+        if logWindow == nil {
+            let win = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 760, height: 460),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            win.title = "Bot 日志"
+            win.isReleasedWhenClosed = false
+            win.center()
+
+            let scrollView = NSScrollView(frame: win.contentView!.bounds)
+            scrollView.autoresizingMask = [.width, .height]
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = true
+
+            let textView = NSTextView(frame: scrollView.bounds)
+            textView.isEditable = false
+            textView.isRichText = false
+            textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            scrollView.documentView = textView
+
+            win.contentView?.addSubview(scrollView)
+            logWindow = win
+        }
+
+        guard let win = logWindow,
+              let scrollView = win.contentView?.subviews.first as? NSScrollView,
+              let textView = scrollView.documentView as? NSTextView else {
+            return
+        }
+
+        let logText: String
+        if FileManager.default.fileExists(atPath: logPath),
+           let content = try? String(contentsOfFile: logPath, encoding: .utf8) {
+            logText = content
+        } else {
+            logText = "暂无日志"
+        }
+
+        textView.string = logText
+        win.makeKeyAndOrderFront(nil)
+        textView.scrollToEndOfDocument(nil)
     }
 
     private func setPendingUI(_ text: String) {

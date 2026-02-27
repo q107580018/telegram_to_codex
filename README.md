@@ -41,6 +41,16 @@ cp .env.example .env
 - `BotControl.app` 为自包含控制器，会内置 `bot.py/.env/requirements` 资源。
 - 首次启动会自动在 `~/Library/Application Support/BotControl/runtime` 初始化运行环境。
 - App 内可一键启动/停止，关闭窗口会自动停止 bot。
+- 如果你修改了 `bot.py`、`BotControlMac.swift` 或运行时相关脚本，必须执行一次：
+
+```bash
+./build_app.sh
+```
+
+该脚本会自动完成：
+- 同步 `BotControl.app/Contents/Resources/BotRuntime` 资源
+- 重新编译 `BotControl.app/Contents/MacOS/BotControl`
+- 重签名并做 `codesign --verify` 校验
 
 ## 命令
 
