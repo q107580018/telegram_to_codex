@@ -21,3 +21,6 @@ venv/
 
 # Local git backup
 .git_backup_*/
+
+# Local assistant instructions
+AGENTS.md

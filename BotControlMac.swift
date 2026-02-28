@@ -27,6 +27,7 @@ final class StatusDotView: NSView {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appName = "BotControl"
+    private var didPromptFullDiskAccess = false
 
     private var window: NSWindow!
     private var logWindow: NSWindow?
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMainMenu()
         buildUI()
         setPendingUI("初始化中...")
+        promptForFullDiskAccessIfNeeded()
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = self.bootstrapRuntime()
@@ -59,6 +61,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func hasFullDiskAccess() -> Bool {
+        // 通过读取受保护目录做启发式检测：无权限时通常返回 NSCocoaErrorDomain Code=257。
+        let probePaths = [
+            NSHomeDirectory() + "/Library/Application Support/com.apple.TCC/TCC.db",
+            NSHomeDirectory() + "/Library/Safari/Bookmarks.plist",
+            NSHomeDirectory() + "/Library/Messages/chat.db",
+        ]
+        var hasExistingProbe = false
+        for path in probePaths {
+            if !FileManager.default.fileExists(atPath: path) {
+                continue
+            }
+            hasExistingProbe = true
+            do {
+                _ = try Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe)
+                return true
+            } catch {
+                continue
+            }
+        }
+        return !hasExistingProbe
+    }
+
+    private func promptForFullDiskAccessIfNeeded() {
+        if didPromptFullDiskAccess || hasFullDiskAccess() {
+            return
+        }
+        didPromptFullDiskAccess = true
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "建议开启“完全磁盘访问权限”"
+        alert.informativeText = "未检测到完全磁盘访问权限，可能导致读取日志、运行时文件或其他本地资源失败。是否现在前往系统设置开启？"
+        alert.addButton(withTitle: "前往开启")
+        alert.addButton(withTitle: "稍后再说")
+        alert.addButton(withTitle: "退出")
+        let result = alert.runModal()
+
+        if result == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                NSWorkspace.shared.open(url)
+            }
+        } else if result == .alertThirdButtonReturn {
+            NSApp.terminate(nil)
+        }
     }
 
     private func setupMainMenu() {
