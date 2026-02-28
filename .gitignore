@@ -24,3 +24,6 @@ venv/
 
 # Local assistant instructions
 AGENTS.md
+
+# Local app build artifact
+BotControl.app/
