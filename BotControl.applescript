@@ -1,4 +1,4 @@
-property projectPath : "/Users/mac/Documents/BotControl"
+property projectPath : ((POSIX path of (path to home folder)) & "Documents/BotControl")
 
 on isBotRunning()
 	set checkCmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then echo running; exit 0; fi; fi; if pgrep -f " & quoted form of (projectPath & "/bot.py") & " >/dev/null 2>&1; then echo running; else echo stopped; fi"

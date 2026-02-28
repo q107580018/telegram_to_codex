@@ -1,5 +1,6 @@
-import subprocess
 import json
+import os
+import subprocess
 
 from config import AppConfig
 
@@ -29,7 +30,8 @@ def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
         for path in config.codex_add_dirs_raw.split(","):
             path = path.strip()
             if path:
-                cmd.extend(["--add-dir", path])
+                normalized_path = os.path.abspath(os.path.expanduser(path))
+                cmd.extend(["--add-dir", normalized_path])
     if config.codex_model:
         cmd.extend(["--model", config.codex_model])
 

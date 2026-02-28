@@ -25,7 +25,7 @@ cp .env.example .env
 
 > 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
-> 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=/Users/mac/Desktop`（多目录逗号分隔）。
+> 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=~/Desktop`（多目录逗号分隔）。
 
 ## 4) 启动
 
