@@ -153,20 +153,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text_with_retry(
         update,
         "已连接 Codex。直接发消息即可对话。\n"
-        "命令：/new 新对话，/reset 清空上下文，/skills 查看可用技能，/status 查看 Codex 状态，"
-        "/setproject 切换目录，/getproject 查看目录，/history 查看历史，/history_clear 清空历史"
+        "命令：/new 新对话，/skills 查看可用技能，/status 查看 Codex 状态，"
+        "/setproject 切换目录，/getproject 查看目录，/history 查看历史"
     )
-
-
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_allowed(update):
-        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
-        return
-    chat_id = update.effective_chat.id
-    chat_histories[chat_id] = []
-    save_chat_histories()
-    reply = "上下文已清空。"
-    await reply_text_with_retry(update, reply)
 
 
 async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -314,27 +303,15 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await reply_text_with_retry(update, reply)
 
 
-async def history_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not is_allowed(update):
-        await reply_text_with_retry(update, "你没有权限使用这个 bot。")
-        return
-    chat_id = update.effective_chat.id
-    chat_histories[chat_id] = []
-    save_chat_histories()
-    await reply_text_with_retry(update, "当前会话历史已清空。")
-
-
 async def post_init(app) -> None:
     await app.bot.set_my_commands(
         [
             BotCommand("new", "新建对话（清空上下文）"),
-            BotCommand("reset", "清空上下文"),
             BotCommand("skills", "查看可用 skills"),
             BotCommand("status", "查看 Codex 状态"),
             BotCommand("setproject", "切换 Codex 项目目录"),
             BotCommand("getproject", "查看当前项目目录与 .env"),
             BotCommand("history", "查看当前会话历史信息"),
-            BotCommand("history_clear", "清空当前会话历史"),
             BotCommand("start", "显示帮助"),
         ]
     )
@@ -420,13 +397,11 @@ def main() -> None:
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("new", new_chat))
-    app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("skills", skills))
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("setproject", setproject))
     app.add_handler(CommandHandler("getproject", getproject))
     app.add_handler(CommandHandler("history", history))
-    app.add_handler(CommandHandler("history_clear", history_clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_error_handler(on_error)
 

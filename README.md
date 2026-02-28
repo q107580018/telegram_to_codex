@@ -56,12 +56,10 @@ cp .env.example .env
 
 - `/start` 开始
 - `/new` 新建对话（清空上下文）
-- `/reset` 清空当前会话上下文
 - `/status` 查看 Codex 状态
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息
-- `/history_clear` 清空当前会话历史
 
 ## 说明
 
