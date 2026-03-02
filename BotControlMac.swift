@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pidPath: String { runtimeDir + "/bot.pid" }
     private var logPath: String { runtimeDir + "/bot.log" }
     private var launchLogPath: String { runtimeDir + "/bot.launch.log" }
+    private var envPath: String { runtimeDir + "/.env" }
+    private var envExamplePath: String { runtimeDir + "/.env.example" }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -249,6 +251,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logBtn.frame = NSRect(x: 288, y: 125, width: 120, height: 36)
         content.addSubview(logBtn)
 
+        let configBtn = makeButton(title: "打开配置", action: #selector(openConfigTapped))
+        configBtn.frame = NSRect(x: 420, y: 125, width: 120, height: 36)
+        content.addSubview(configBtn)
+
         let hint = NSTextField(labelWithString: "关闭窗口会自动停止 bot")
         hint.font = NSFont.systemFont(ofSize: 12)
         hint.textColor = .secondaryLabelColor
@@ -308,6 +314,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openLogTapped() {
         showLogWindow()
+    }
+
+    @objc private func openConfigTapped() {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: envPath) {
+            do {
+                if !fm.fileExists(atPath: runtimeDir) {
+                    try fm.createDirectory(atPath: runtimeDir, withIntermediateDirectories: true)
+                }
+                guard fm.fileExists(atPath: envExamplePath) else {
+                    showAlert(
+                        title: "打开配置失败",
+                        text: "未找到 .env.example，请先启动一次应用完成运行时初始化。"
+                    )
+                    return
+                }
+                try fm.copyItem(atPath: envExamplePath, toPath: envPath)
+            } catch {
+                showAlert(
+                    title: "打开配置失败",
+                    text: "创建 .env 失败：\(error.localizedDescription)"
+                )
+                return
+            }
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: envPath))
+    }
+
+    private func showAlert(title: String, text: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = text
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     private func showLogWindow() {
@@ -437,7 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) > \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
+        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) > \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

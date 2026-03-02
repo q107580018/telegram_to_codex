@@ -1,6 +1,9 @@
+import json
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from urllib.error import HTTPError, URLError
+from urllib.request import ProxyHandler, Request, build_opener
 
 from dotenv import load_dotenv
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
@@ -42,6 +45,13 @@ def _read_positive_float_env(name: str, default: float) -> float:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def _read_bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def setup_logging() -> None:
@@ -89,6 +99,57 @@ def parse_allowed_user_ids(raw_ids: str, logger: logging.Logger) -> set[int]:
         except ValueError:
             logger.warning("忽略非法 ALLOWED_USER_IDS 项：%s", uid)
     return allowed_user_ids
+
+
+def is_telegram_proxy_usable(
+    proxy_url: str, telegram_bot_token: str, timeout_sec: float, logger: logging.Logger
+) -> bool:
+    test_url = f"https://api.telegram.org/bot{telegram_bot_token}/getMe"
+    opener = build_opener(
+        ProxyHandler(
+            {
+                "http": proxy_url,
+                "https": proxy_url,
+            }
+        )
+    )
+    request = Request(test_url, method="GET")
+
+    try:
+        with opener.open(request, timeout=timeout_sec) as resp:
+            payload = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(payload)
+        if data.get("ok") is True:
+            logger.info("TELEGRAM_PROXY_URL 可用，将使用代理轮询。proxy=%s", proxy_url)
+            return True
+        logger.warning(
+            "TELEGRAM_PROXY_URL 探测返回非预期结果，回退直连。proxy=%s", proxy_url
+        )
+        return False
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        logger.warning("TELEGRAM_PROXY_URL 不可用，自动回退直连。proxy=%s err=%s", proxy_url, exc)
+        return False
+    except Exception as exc:
+        logger.warning("TELEGRAM_PROXY_URL 探测异常，自动回退直连。proxy=%s err=%s", proxy_url, exc)
+        return False
+
+
+def resolve_telegram_proxy_url(handlers: BotHandlers, logger: logging.Logger) -> str:
+    proxy_url = handlers.config.telegram_proxy_url
+    if not proxy_url:
+        return ""
+    if not _read_bool_env("TELEGRAM_PROXY_PROBE_ENABLED", True):
+        logger.info("已禁用代理探测，按配置使用 TELEGRAM_PROXY_URL。proxy=%s", proxy_url)
+        return proxy_url
+    timeout_sec = _read_positive_float_env("TELEGRAM_PROXY_PROBE_TIMEOUT_SEC", 6.0)
+    if is_telegram_proxy_usable(
+        proxy_url=proxy_url,
+        telegram_bot_token=handlers.config.telegram_bot_token,
+        timeout_sec=timeout_sec,
+        logger=logger,
+    ):
+        return proxy_url
+    return ""
 
 
 def build_handlers(logger: logging.Logger) -> BotHandlers:
@@ -139,12 +200,11 @@ def main() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     handlers = build_handlers(logger)
+    effective_proxy_url = resolve_telegram_proxy_url(handlers, logger)
 
     builder = ApplicationBuilder().token(handlers.config.telegram_bot_token)
-    if handlers.config.telegram_proxy_url:
-        builder = builder.proxy(handlers.config.telegram_proxy_url).get_updates_proxy(
-            handlers.config.telegram_proxy_url
-        )
+    if effective_proxy_url:
+        builder = builder.proxy(effective_proxy_url).get_updates_proxy(effective_proxy_url)
     builder = builder.post_init(handlers.post_init)
     app = builder.build()
 
