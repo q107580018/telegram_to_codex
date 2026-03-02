@@ -2,12 +2,15 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections import defaultdict
-from typing import Dict, List
 from dataclasses import replace
+from logging.handlers import RotatingFileHandler
+from typing import Dict, List
 
+from dotenv import load_dotenv
 from telegram import BotCommand, Update
-from telegram.error import Conflict
+from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -26,10 +29,55 @@ from project_service import ProjectService
 from skills import list_available_skills
 from telegram_io import keep_typing, reply_text_with_retry, send_message_with_retry
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+LOG_FILE = os.getenv("BOT_LOG_FILE", os.path.join(BASE_DIR, "bot.log"))
+
+
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name, str(default)) or "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _read_positive_float_env(name: str, default: float) -> float:
+    raw = (os.getenv(name, str(default)) or "").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def setup_logging() -> None:
+    max_bytes = _read_positive_int_env("BOT_LOG_MAX_BYTES", 5 * 1024 * 1024)
+    backup_count = _read_positive_int_env("BOT_LOG_BACKUP_COUNT", 5)
+    log_to_stdout = os.getenv("BOT_LOG_TO_STDOUT", "1").strip().lower() not in {"0", "false", "no", "off"}
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.handlers.clear()
+
+    file_handler = RotatingFileHandler(
+        LOG_FILE,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+
+    if log_to_stdout:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        root_logger.addHandler(stream_handler)
+
+
+setup_logging()
 logger = logging.getLogger(__name__)
 # Hide noisy polling request logs from dependencies.
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -39,7 +87,7 @@ CONFIG = load_config()
 # 项目目录由服务对象统一管理，支持运行时切换并持久化到 .env。
 project_service = ProjectService(
     initial_project_dir=CONFIG.codex_project_dir,
-    env_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    env_path=os.path.join(BASE_DIR, ".env"),
 )
 
 allowed_user_ids = set()
@@ -57,12 +105,59 @@ chat_histories: Dict[int, List[dict]] = defaultdict(list)
 chat_usage_stats: Dict[int, dict] = defaultdict(dict)
 MAX_TURNS = 12
 CODEX_MAX_RETRIES = 3
-CHAT_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_histories.json")
+CHAT_HISTORY_FILE = os.path.join(BASE_DIR, "chat_histories.json")
+POLLING_TIMEOUT_SEC = 30
+POLLING_BOOTSTRAP_RETRIES = -1
+POLLING_RESTART_THRESHOLD = _read_positive_int_env("TELEGRAM_POLLING_RESTART_THRESHOLD", 3)
+POLLING_RESTART_COOLDOWN_SEC = _read_positive_float_env("TELEGRAM_POLLING_RESTART_COOLDOWN_SEC", 20.0)
+polling_consecutive_network_errors = 0
+polling_last_restart_monotonic = 0.0
+polling_restart_lock = asyncio.Lock()
 
 SYSTEM_PROMPT = (
     "You are Codex, a pragmatic coding assistant. "
     "Answer clearly and concisely. Prefer actionable code-level guidance."
 )
+
+
+def forward_polling_error(app, exc: Exception) -> None:
+    app.create_task(app.process_error(error=exc, update=None))
+
+
+def mark_polling_healthy() -> None:
+    global polling_consecutive_network_errors
+    if polling_consecutive_network_errors > 0:
+        logger.info("Telegram 轮询已恢复，连续网络错误计数已清零（之前=%s）。", polling_consecutive_network_errors)
+    polling_consecutive_network_errors = 0
+
+
+async def restart_polling(application) -> None:
+    global polling_last_restart_monotonic
+    if not application.updater:
+        return
+    now = time.monotonic()
+    if now - polling_last_restart_monotonic < POLLING_RESTART_COOLDOWN_SEC:
+        return
+
+    async with polling_restart_lock:
+        now = time.monotonic()
+        if now - polling_last_restart_monotonic < POLLING_RESTART_COOLDOWN_SEC:
+            return
+        polling_last_restart_monotonic = now
+
+        logger.warning("检测到连续网络异常，开始重启 Telegram polling。")
+        try:
+            if application.updater.running:
+                await application.updater.stop()
+            await application.updater.start_polling(
+                timeout=POLLING_TIMEOUT_SEC,
+                bootstrap_retries=POLLING_BOOTSTRAP_RETRIES,
+                error_callback=lambda exc: forward_polling_error(application, exc),
+            )
+            mark_polling_healthy()
+            logger.info("Telegram polling 重启成功。")
+        except Exception as exc:
+            logger.exception("Telegram polling 重启失败。", exc_info=exc)
 
 
 def is_allowed(update: Update) -> bool:
@@ -147,6 +242,7 @@ def update_usage_stats(chat_id: int, usage: dict) -> None:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -159,6 +255,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -170,6 +267,7 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -205,6 +303,7 @@ async def ask_codex_with_retry(prompt: str) -> tuple[str, dict]:
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -240,6 +339,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def setproject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -275,6 +375,7 @@ async def setproject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def getproject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -289,6 +390,7 @@ async def getproject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -318,15 +420,27 @@ async def post_init(app) -> None:
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    global polling_consecutive_network_errors
     err = context.error
     if isinstance(err, Conflict):
         logger.error("Telegram 冲突：检测到同一 token 的重复轮询实例，当前进程将停止。")
         await context.application.stop()
         return
+    if update is None and isinstance(err, (NetworkError, TimedOut)):
+        polling_consecutive_network_errors += 1
+        logger.warning(
+            "Telegram 轮询网络异常（连续 %s 次）：%s",
+            polling_consecutive_network_errors,
+            err,
+        )
+        if polling_consecutive_network_errors >= POLLING_RESTART_THRESHOLD:
+            asyncio.create_task(restart_polling(context.application))
+        return
     logger.exception("Unhandled bot error", exc_info=err)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mark_polling_healthy()
     if not is_allowed(update):
         await reply_text_with_retry(update, "你没有权限使用这个 bot。")
         return
@@ -406,7 +520,7 @@ def main() -> None:
     app.add_error_handler(on_error)
 
     logger.info("Bot is running with model: %s", CONFIG.codex_model or "default codex config")
-    app.run_polling(timeout=30, bootstrap_retries=-1)
+    app.run_polling(timeout=POLLING_TIMEOUT_SEC, bootstrap_retries=POLLING_BOOTSTRAP_RETRIES)
 
 
 if __name__ == "__main__":

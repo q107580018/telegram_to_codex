@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var botPath: String { runtimeDir + "/bot.py" }
     private var pidPath: String { runtimeDir + "/bot.pid" }
     private var logPath: String { runtimeDir + "/bot.log" }
+    private var launchLogPath: String { runtimeDir + "/bot.launch.log" }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -367,7 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; nohup \(q(pythonPath)) \(q(botPath)) >> \(q(logPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
+        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) > \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

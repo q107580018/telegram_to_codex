@@ -7,7 +7,7 @@ on isBotRunning()
 end isBotRunning
 
 on startBot()
-	set cmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; nohup " & quoted form of (projectPath & "/.venv/bin/python") & " " & quoted form of (projectPath & "/bot.py") & " >> bot.log 2>&1 & newpid=$!; echo $newpid > bot.pid; sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
+	set cmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; BOT_LOG_TO_STDOUT=0 nohup " & quoted form of (projectPath & "/.venv/bin/python") & " " & quoted form of (projectPath & "/bot.py") & " > bot.launch.log 2>&1 & newpid=$!; echo $newpid > bot.pid; sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
 	return do shell script cmd
 end startBot
 

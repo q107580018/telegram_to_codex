@@ -26,6 +26,7 @@ cp .env.example .env
 > 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
 > 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=~/Desktop`（多目录逗号分隔）。
+> 日志默认按大小轮转：`BOT_LOG_MAX_BYTES`（默认 5MB）与 `BOT_LOG_BACKUP_COUNT`（默认 5 份）。
 
 ## 4) 启动
 
@@ -66,4 +67,5 @@ cp .env.example .env
 - 当前使用轮询模式（`run_polling`），适合本地快速使用。
 - 上下文默认保留最近 12 轮对话，并自动落盘到 `chat_histories.json`（重启后可恢复）。
 - 可通过 `.env` 的 `ALLOWED_USER_IDS` 限制可用用户（逗号分隔 Telegram user_id）。
+- 日志默认写入 `bot.log` 并自动轮转，避免文件无限增长（可通过 `BOT_LOG_*` 参数调整）。
 - 不需要 `OPENAI_API_KEY`，依赖本机 `codex` 命令的登录态。
