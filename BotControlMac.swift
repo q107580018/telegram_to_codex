@@ -28,6 +28,10 @@ final class StatusDotView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appName = "BotControl"
     private var didPromptFullDiskAccess = false
+    private var shouldKeepBotRunning = false
+    private var wasRunningBeforeSleep = false
+    private var isWakeRecoveryInProgress = false
+    private var workspaceObservers: [Any] = []
 
     private var window: NSWindow!
     private var logWindow: NSWindow?
@@ -51,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         setupMainMenu()
         buildUI()
+        setupPowerStateObservers()
         setPendingUI("初始化中...")
         promptForFullDiskAccessIfNeeded()
 
@@ -58,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = self.bootstrapRuntime()
             DispatchQueue.main.async {
                 self.refreshStatus(message: result)
+                self.shouldKeepBotRunning = self.isBotRunning()
             }
         }
 
@@ -135,7 +141,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for observer in workspaceObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        workspaceObservers.removeAll()
         _ = stopBotCommand()
+    }
+
+    private func setupPowerStateObservers() {
+        let center = NSWorkspace.shared.notificationCenter
+        let willSleepObserver = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleWillSleep()
+        }
+        let didWakeObserver = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleDidWake()
+        }
+        workspaceObservers.append(willSleepObserver)
+        workspaceObservers.append(didWakeObserver)
+    }
+
+    private func handleWillSleep() {
+        wasRunningBeforeSleep = shouldKeepBotRunning || isBotRunning()
+    }
+
+    private func handleDidWake() {
+        guard wasRunningBeforeSleep else {
+            return
+        }
+        recoverBotAfterWake()
+    }
+
+    private func recoverBotAfterWake() {
+        if isWakeRecoveryInProgress {
+            return
+        }
+        isWakeRecoveryInProgress = true
+        primaryButton.isEnabled = false
+        setPendingUI("唤醒恢复中...")
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = self.stopBotCommand()
+            let startOut = self.startBotCommand()
+            DispatchQueue.main.async {
+                self.isWakeRecoveryInProgress = false
+                self.primaryButton.isEnabled = true
+                self.shouldKeepBotRunning = self.isBotRunning()
+                self.refreshStatus(message: "唤醒恢复：\(startOut)")
+            }
+        }
     }
 
     private func buildUI() {
@@ -205,6 +266,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func primaryTapped() {
+        if isWakeRecoveryInProgress {
+            return
+        }
         if isBotRunning() {
             stopTapped()
         } else {
@@ -219,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let out = self.startBotCommand()
             DispatchQueue.main.async {
                 self.refreshStatus(message: out)
+                self.shouldKeepBotRunning = self.isBotRunning()
                 self.primaryButton.isEnabled = true
             }
         }
@@ -231,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let out = self.stopBotCommand()
             DispatchQueue.main.async {
                 self.refreshStatus(message: out)
+                self.shouldKeepBotRunning = false
                 self.primaryButton.isEnabled = true
             }
         }

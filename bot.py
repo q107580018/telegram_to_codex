@@ -110,6 +110,8 @@ POLLING_TIMEOUT_SEC = 30
 POLLING_BOOTSTRAP_RETRIES = -1
 POLLING_RESTART_THRESHOLD = _read_positive_int_env("TELEGRAM_POLLING_RESTART_THRESHOLD", 3)
 POLLING_RESTART_COOLDOWN_SEC = _read_positive_float_env("TELEGRAM_POLLING_RESTART_COOLDOWN_SEC", 20.0)
+WAKE_WATCHDOG_INTERVAL_SEC = _read_positive_float_env("TELEGRAM_WAKE_WATCHDOG_INTERVAL_SEC", 20.0)
+WAKE_GAP_THRESHOLD_SEC = _read_positive_float_env("TELEGRAM_WAKE_GAP_THRESHOLD_SEC", 90.0)
 polling_consecutive_network_errors = 0
 polling_last_restart_monotonic = 0.0
 polling_restart_lock = asyncio.Lock()
@@ -158,6 +160,20 @@ async def restart_polling(application) -> None:
             logger.info("Telegram polling 重启成功。")
         except Exception as exc:
             logger.exception("Telegram polling 重启失败。", exc_info=exc)
+
+
+async def wake_watchdog(application) -> None:
+    # 睡眠期间事件循环会停摆；唤醒后若检测到大时间跳变，则主动刷新 polling 长连接。
+    last_tick = time.monotonic()
+    while True:
+        await asyncio.sleep(WAKE_WATCHDOG_INTERVAL_SEC)
+        now = time.monotonic()
+        gap = now - last_tick
+        last_tick = now
+        if gap < WAKE_GAP_THRESHOLD_SEC:
+            continue
+        logger.warning("检测到系统可能经历睡眠/唤醒（事件循环停顿 %.1f 秒），尝试重启 polling。", gap)
+        await restart_polling(application)
 
 
 def is_allowed(update: Update) -> bool:
@@ -406,6 +422,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def post_init(app) -> None:
+    app.create_task(wake_watchdog(app), name="wake_watchdog")
     await app.bot.set_my_commands(
         [
             BotCommand("new", "新建对话（清空上下文）"),

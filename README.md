@@ -27,6 +27,7 @@ cp .env.example .env
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
 > 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=~/Desktop`（多目录逗号分隔）。
 > 日志默认按大小轮转：`BOT_LOG_MAX_BYTES`（默认 5MB）与 `BOT_LOG_BACKUP_COUNT`（默认 5 份）。
+> 如遇系统睡眠/唤醒后偶发失联，可调 `TELEGRAM_WAKE_WATCHDOG_INTERVAL_SEC` 与 `TELEGRAM_WAKE_GAP_THRESHOLD_SEC`。
 
 ## 4) 启动
 
@@ -65,6 +66,7 @@ cp .env.example .env
 ## 说明
 
 - 当前使用轮询模式（`run_polling`），适合本地快速使用。
+- 内置睡眠唤醒检测看门狗，检测到事件循环长停顿会自动重启 polling（`TELEGRAM_WAKE_*` 可调）。
 - 上下文默认保留最近 12 轮对话，并自动落盘到 `chat_histories.json`（重启后可恢复）。
 - 可通过 `.env` 的 `ALLOWED_USER_IDS` 限制可用用户（逗号分隔 Telegram user_id）。
 - 日志默认写入 `bot.log` 并自动轮转，避免文件无限增长（可通过 `BOT_LOG_*` 参数调整）。
