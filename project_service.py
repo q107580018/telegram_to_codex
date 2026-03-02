@@ -1,5 +1,6 @@
 import os
-import re
+
+from env_store import read_env_key, upsert_env_key
 
 
 class ProjectService:
@@ -31,58 +32,8 @@ class ProjectService:
         env_path = self._persist_project_dir_to_env(new_path)
         return new_path, created, env_path
 
-    def _env_value_for_write(self, value: str) -> str:
-        if any(ch in value for ch in [" ", "\t", "#", '"']):
-            escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-            return f'"{escaped}"'
-        return value
-
     def _persist_project_dir_to_env(self, new_path: str) -> str:
-        # 优先覆盖现有 CODEX_PROJECT_DIR，没有则追加新项。
-        key_pattern = re.compile(r"^\s*CODEX_PROJECT_DIR\s*=")
-        new_line = f"CODEX_PROJECT_DIR={self._env_value_for_write(new_path)}\n"
-
-        if os.path.exists(self._env_path):
-            with open(self._env_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        else:
-            lines = []
-
-        replaced = False
-        for idx, line in enumerate(lines):
-            if line.lstrip().startswith("#"):
-                continue
-            if key_pattern.match(line):
-                lines[idx] = new_line
-                replaced = True
-                break
-
-        if not replaced:
-            if lines and not lines[-1].endswith("\n"):
-                lines[-1] = lines[-1] + "\n"
-            lines.append(new_line)
-
-        with open(self._env_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
-        return self._env_path
+        return upsert_env_key(self._env_path, "CODEX_PROJECT_DIR", new_path)
 
     def read_env_project_dir(self) -> str:
-        if not os.path.exists(self._env_path):
-            return ""
-        key_pattern = re.compile(r"^\s*CODEX_PROJECT_DIR\s*=(.*)$")
-        try:
-            with open(self._env_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except Exception:
-            return ""
-        for line in lines:
-            if line.lstrip().startswith("#"):
-                continue
-            match = key_pattern.match(line)
-            if not match:
-                continue
-            value = match.group(1).strip()
-            if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
-                value = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-            return value
-        return ""
+        return read_env_key(self._env_path, "CODEX_PROJECT_DIR")

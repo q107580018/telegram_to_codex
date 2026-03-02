@@ -1,9 +1,10 @@
 import os
-import re
 import shutil
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
+from env_store import upsert_env_key
 
 
 @dataclass(frozen=True)
@@ -37,47 +38,26 @@ def resolve_codex_bin(codex_bin_raw: str) -> str:
     )
 
 
-def persist_codex_bin_if_needed(codex_bin_raw: str, resolved_bin: str) -> None:
+def migrate_codex_bin_env_if_needed(
+    env_path: str, codex_bin_raw: str, resolved_bin: str
+) -> bool:
     raw = (codex_bin_raw or "").strip()
     if not raw or not os.path.isabs(raw):
-        return
+        return False
     # 仅在“旧绝对路径不可用，且已成功解析到新路径”时写回。
     if os.path.exists(raw) and os.access(raw, os.X_OK):
-        return
+        return False
     if raw == resolved_bin:
-        return
+        return False
 
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if not os.path.exists(env_path):
-        return
-
-    key_pattern = re.compile(r"^\s*CODEX_BIN\s*=")
-    value = resolved_bin.replace("\\", "\\\\").replace('"', '\\"')
-    new_line = f'CODEX_BIN="{value}"\n'
-    try:
-        with open(env_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except Exception:
-        return
-
-    replaced = False
-    for idx, line in enumerate(lines):
-        if line.lstrip().startswith("#"):
-            continue
-        if key_pattern.match(line):
-            lines[idx] = new_line
-            replaced = True
-            break
-    if not replaced:
-        if lines and not lines[-1].endswith("\n"):
-            lines[-1] = lines[-1] + "\n"
-        lines.append(new_line)
+        return False
 
     try:
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
+        upsert_env_key(env_path, "CODEX_BIN", resolved_bin)
+        return True
     except Exception:
-        return
+        return False
 
 
 def load_config() -> AppConfig:
@@ -94,8 +74,6 @@ def load_config() -> AppConfig:
     os.makedirs(codex_project_dir, exist_ok=True)
 
     resolved_bin = resolve_codex_bin(codex_bin_raw)
-    persist_codex_bin_if_needed(codex_bin_raw, resolved_bin)
-
     return AppConfig(
         telegram_bot_token=telegram_bot_token,
         telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),

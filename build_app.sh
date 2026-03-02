@@ -18,6 +18,9 @@ cp \
   "$ROOT_DIR/bot.py" \
   "$ROOT_DIR/codex_client.py" \
   "$ROOT_DIR/config.py" \
+  "$ROOT_DIR/env_store.py" \
+  "$ROOT_DIR/chat_store.py" \
+  "$ROOT_DIR/handlers.py" \
   "$ROOT_DIR/project_service.py" \
   "$ROOT_DIR/telegram_io.py" \
   "$ROOT_DIR/skills.py" \
