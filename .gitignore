@@ -27,3 +27,6 @@ AGENTS.md
 
 # Local app build artifact
 BotControl.app/
+
+# Local git worktrees
+.worktrees/
