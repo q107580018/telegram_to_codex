@@ -191,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private var logWindow: NSWindow?
     private var logRefreshTimer: Timer?
+    private var autoStatusTimer: Timer?
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
@@ -198,7 +199,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let projectPathLabel = NSTextField(labelWithString: "项目目录：读取中...")
     private let envPathLabel = NSTextField(labelWithString: "配置文件：读取中...")
     private let primaryButton = HoverButton(title: "启动", target: nil, action: nil)
-    private let refreshButton = HoverButton(title: "刷新状态", target: nil, action: nil)
     private let logButton = HoverButton(title: "查看日志", target: nil, action: nil)
     private let configButton = HoverButton(title: "打开配置", target: nil, action: nil)
 
@@ -259,6 +259,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         logRefreshTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
             self?.refreshLogWindowIfVisible()
+        }
+        autoStatusTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.autoRefreshStatusIfNeeded()
         }
     }
 
@@ -395,6 +398,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         logRefreshTimer?.invalidate()
         logRefreshTimer = nil
+        autoStatusTimer?.invalidate()
+        autoStatusTimer = nil
         for observer in workspaceObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -611,14 +616,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         primaryButton.keyEquivalentModifierMask = []
         primaryButton.setAccessibilityLabel("启动或停止机器人")
 
-        refreshButton.title = "刷新状态"
-        refreshButton.target = self
-        refreshButton.action = #selector(refreshMenuTapped)
-        styleSecondaryButton(refreshButton, symbolName: "arrow.clockwise")
-        refreshButton.keyEquivalent = "r"
-        refreshButton.keyEquivalentModifierMask = [.command]
-        refreshButton.setAccessibilityLabel("刷新机器人状态")
-
         logButton.title = "查看日志"
         logButton.target = self
         logButton.action = #selector(openLogTapped)
@@ -648,29 +645,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             actionStack.bottomAnchor.constraint(equalTo: actionPanel.bottomAnchor, constant: -14),
         ])
 
-        let topButtonRow = NSStackView(views: [primaryButton, refreshButton])
-        topButtonRow.orientation = .horizontal
-        topButtonRow.spacing = 12
-        topButtonRow.distribution = .fillEqually
-        topButtonRow.alignment = .centerY
-
-        let bottomButtonRow = NSStackView(views: [logButton, configButton])
-        bottomButtonRow.orientation = .horizontal
-        bottomButtonRow.spacing = 12
-        bottomButtonRow.distribution = .fillEqually
-        bottomButtonRow.alignment = .centerY
-
-        actionStack.addArrangedSubview(topButtonRow)
-        actionStack.addArrangedSubview(bottomButtonRow)
+        let buttonRow = NSStackView(views: [primaryButton, logButton, configButton])
+        buttonRow.orientation = .horizontal
+        buttonRow.spacing = 12
+        buttonRow.distribution = .fillEqually
+        buttonRow.alignment = .centerY
+        actionStack.addArrangedSubview(buttonRow)
         NSLayoutConstraint.activate([
             primaryButton.heightAnchor.constraint(equalToConstant: 58),
-            refreshButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
             logButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
             configButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
         ])
 
         let actionHint = NSTextField(
-            labelWithString: "快捷键：⌘R 刷新状态 · ⌘L 查看日志 · ⌘, 打开配置 · Enter 启动/停止"
+            labelWithString: "状态自动刷新（3 秒）· 快捷键：⌘L 查看日志 · ⌘, 打开配置 · Enter 启动/停止"
         )
         actionHint.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         actionHint.textColor = .tertiaryLabelColor
@@ -783,7 +771,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setControlButtonsEnabled(_ isEnabled: Bool) {
         primaryButton.isEnabled = isEnabled
-        refreshButton.isEnabled = isEnabled
     }
 
     @objc private func primaryTapped() {
@@ -803,9 +790,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.global(qos: .userInitiated).async {
             let out = self.startBotCommand()
             let message = self.messageForStartCommandOutput(out)
+            let output = out.trimmingCharacters(in: .whitespacesAndNewlines)
             DispatchQueue.main.async {
-                self.refreshStatus(message: message)
-                self.shouldKeepBotRunning = self.isBotRunning()
+                let running = self.isBotRunning()
+                self.refreshStatus(runningOverride: running, message: message)
+                self.shouldKeepBotRunning = running || output == "started" || output == "already_running"
                 self.setControlButtonsEnabled(true)
             }
         }
@@ -824,21 +813,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func refreshMenuTapped() {
-        refreshButton.isEnabled = false
-        setPendingUI("刷新状态...")
-        DispatchQueue.global(qos: .userInitiated).async {
-            let running = self.isBotRunning()
-            DispatchQueue.main.async {
-                let summary = running ? "状态已刷新：运行中" : "状态已刷新：已停止"
-                self.refreshStatus(runningOverride: running, message: summary)
-                self.refreshButton.isEnabled = true
-            }
-        }
-    }
-
     @objc private func openLogTapped() {
         showLogWindow()
+    }
+
+    private func autoRefreshStatusIfNeeded() {
+        if isWakeRecoveryInProgress || !primaryButton.isEnabled {
+            return
+        }
+        let running = isBotRunning()
+        let uiRunning = primaryButton.title == "停止"
+        if running == uiRunning {
+            return
+        }
+        shouldKeepBotRunning = running
+        if running {
+            refreshStatus(runningOverride: true, message: "状态自动刷新：运行中")
+        } else {
+            refreshStatus(
+                runningOverride: false,
+                message: "状态自动刷新：已停止（\(friendlyStartFailureReason())）"
+            )
+        }
     }
 
     @objc private func openConfigTapped() {
