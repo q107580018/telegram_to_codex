@@ -932,13 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateLogTextView(_ textView: NSTextView) {
-        let logText: String
-        if FileManager.default.fileExists(atPath: logPath),
-           let content = try? String(contentsOfFile: logPath, encoding: .utf8) {
-            logText = content
-        } else {
-            logText = "暂无日志"
-        }
+        let logText = readLogTextForDisplay()
 
         if textView.string == logText {
             return
@@ -1029,12 +1023,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func messageForStartCommandOutput(_ rawOutput: String) -> String {
         let output = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         if output == "failed" {
-            if let reason = readLastLaunchErrorLine() {
-                return "启动失败：\(reason)"
-            }
-            return "启动失败"
+            return "启动失败：\(friendlyStartFailureReason())"
         }
         return output
+    }
+
+    private func friendlyStartFailureReason() -> String {
+        let token = readEnvValue(for: "TELEGRAM_BOT_TOKEN")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if token.isEmpty {
+            return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN），请先在配置中填写。"
+        }
+
+        guard let raw = readLastLaunchErrorLine(), !raw.isEmpty else {
+            return "请查看启动日志（bot.launch.log）。"
+        }
+        return mapTechnicalStartErrorToFriendly(raw)
+    }
+
+    private func mapTechnicalStartErrorToFriendly(_ raw: String) -> String {
+        let lowered = raw.lowercased()
+        if lowered.contains("missing telegram_bot_token") {
+            return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN）。"
+        }
+        if lowered.contains("invalidtoken") || lowered.contains("unauthorized") {
+            return "Telegram Bot Token 无效，请检查是否填错。"
+        }
+        if lowered.contains("conflict: terminated by other getupdates request") {
+            return "检测到同一 Token 有其他机器人实例在轮询，请先关闭其它实例。"
+        }
+        if lowered.contains("ssl_error_syscall")
+            || lowered.contains("remoteprotocolerror")
+            || lowered.contains("connecterror")
+            || lowered.contains("proxyerror")
+        {
+            return "网络或代理连接失败，请检查代理配置（TELEGRAM_PROXY_URL）和代理软件状态。"
+        }
+        if lowered.contains("no such file or directory") && lowered.contains("codex") {
+            return "找不到 codex 命令，请安装 codex 或修正 CODEX_BIN。"
+        }
+        return raw
     }
 
     private func readLastLaunchErrorLine() -> String? {
@@ -1050,6 +1078,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return trimmed
         }
         return nil
+    }
+
+    private func readLogTextForDisplay() -> String {
+        let botText = (try? String(contentsOfFile: logPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let launchText = (try? String(contentsOfFile: launchLogPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if !botText.isEmpty, !launchText.isEmpty {
+            return "[运行日志 bot.log]\n\(botText)\n\n[启动日志 bot.launch.log]\n\(launchText)\n"
+        }
+        if !botText.isEmpty {
+            return botText + "\n"
+        }
+        if !launchText.isEmpty {
+            return "[启动日志 bot.launch.log]\n\(launchText)\n"
+        }
+        return "暂无日志（尚未启动）\n日志路径：\(logPath)\n启动日志路径：\(launchLogPath)"
     }
 
     private func extractEnvKey(from line: String, includeCommented: Bool) -> String? {
@@ -1213,6 +1259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             return "初始化失败：\(error.localizedDescription)"
         }
+        ensureRuntimeLogFiles()
 
         guard let resourceURL = Bundle.main.resourceURL else {
             return "初始化失败：读取资源目录失败"
@@ -1297,6 +1344,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "运行环境已就绪（codex: \(codexPath)，已补全 \(addedCount) 个新配置项）"
         }
         return "运行环境已就绪（codex: \(codexPath)）"
+    }
+
+    private func ensureRuntimeLogFiles() {
+        let fm = FileManager.default
+        for path in [logPath, launchLogPath] {
+            if fm.fileExists(atPath: path) {
+                continue
+            }
+            fm.createFile(atPath: path, contents: Data(), attributes: nil)
+        }
     }
 
     private func resolveCodexBinaryPath() -> String? {
