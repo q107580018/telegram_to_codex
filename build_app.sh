@@ -3,15 +3,56 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_PATH="$ROOT_DIR/BotControl.app"
-BIN_PATH="$APP_PATH/Contents/MacOS/BotControl"
-RUNTIME_PATH="$APP_PATH/Contents/Resources/BotRuntime"
+CONTENTS_PATH="$APP_PATH/Contents"
+MACOS_PATH="$CONTENTS_PATH/MacOS"
+RES_PATH="$CONTENTS_PATH/Resources"
+BIN_PATH="$MACOS_PATH/BotControl"
+RUNTIME_PATH="$RES_PATH/BotRuntime"
+PLIST_PATH="$CONTENTS_PATH/Info.plist"
+ICONSET_PATH="$ROOT_DIR/icon_work/BotControl.iconset"
+ICON_PATH="$RES_PATH/BotControl.icns"
 
 if [[ ! -d "$APP_PATH" ]]; then
-  echo "BotControl.app 不存在：$APP_PATH"
-  exit 1
+  echo "BotControl.app 不存在，正在初始化：$APP_PATH"
+  mkdir -p "$MACOS_PATH" "$RUNTIME_PATH"
+
+  cat > "$PLIST_PATH" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>BotControl</string>
+  <key>CFBundleExecutable</key>
+  <string>BotControl</string>
+  <key>CFBundleIdentifier</key>
+  <string>local.botcontrol.app</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>BotControl</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>12.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
+</dict>
+</plist>
+PLIST
 fi
 
-mkdir -p "$RUNTIME_PATH"
+mkdir -p "$MACOS_PATH" "$RES_PATH" "$RUNTIME_PATH"
+
+if [[ ! -f "$ICON_PATH" ]] && [[ -d "$ICONSET_PATH" ]] && command -v iconutil >/dev/null 2>&1; then
+  iconutil -c icns "$ICONSET_PATH" -o "$ICON_PATH"
+fi
 
 # 1) 同步 App 内置运行时脚本
 cp \
