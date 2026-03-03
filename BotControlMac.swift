@@ -182,6 +182,7 @@ final class HoverButton: NSButton {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appName = "BotControl"
     private var didPromptFullDiskAccess = false
+    private var didPromptCodexInstall = false
     private var shouldKeepBotRunning = false
     private var wasRunningBeforeSleep = false
     private var isWakeRecoveryInProgress = false
@@ -246,6 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let result = self.bootstrapRuntime()
             DispatchQueue.main.async {
                 self.refreshStatus(message: result)
+                if result.hasPrefix("初始化失败：未检测到 codex 命令") {
+                    self.primaryButton.isEnabled = false
+                    self.promptForCodexInstallIfNeeded()
+                }
                 self.shouldKeepBotRunning = self.isBotRunning()
             }
         }
@@ -297,6 +302,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if result == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+                NSWorkspace.shared.open(url)
+            }
+        } else if result == .alertThirdButtonReturn {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func promptForCodexInstallIfNeeded() {
+        if didPromptCodexInstall {
+            return
+        }
+        didPromptCodexInstall = true
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "未检测到 codex 命令"
+        alert.informativeText = "当前设备未找到可执行的 codex，机器人无法启动。\n请先安装：brew install --cask codex\n安装后重启 BotControl。"
+        alert.addButton(withTitle: "前往安装文档")
+        alert.addButton(withTitle: "稍后再说")
+        alert.addButton(withTitle: "退出")
+        let result = alert.runModal()
+
+        if result == .alertFirstButtonReturn {
+            if let url = URL(string: "https://developers.openai.com/codex/cli/") {
                 NSWorkspace.shared.open(url)
             }
         } else if result == .alertThirdButtonReturn {
@@ -1226,6 +1255,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        guard let codexPath = resolveCodexBinaryPath() else {
+            return "初始化失败：未检测到 codex 命令（请先安装）"
+        }
+
         let setupCmd = "cd \(q(runtimeDir)) && if [ ! -x .venv/bin/python ]; then uv venv .venv; fi && uv pip install -r requirements.txt >/dev/null"
         let out = runShell(setupCmd)
         if !FileManager.default.fileExists(atPath: pythonPath) {
@@ -1234,9 +1267,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let addedCount = syncMissingEnvKeysFromTemplate()
         if addedCount > 0 {
-            return "运行环境已就绪（已补全 \(addedCount) 个新配置项）"
+            return "运行环境已就绪（codex: \(codexPath)，已补全 \(addedCount) 个新配置项）"
         }
-        return "运行环境已就绪"
+        return "运行环境已就绪（codex: \(codexPath)）"
+    }
+
+    private func resolveCodexBinaryPath() -> String? {
+        let fm = FileManager.default
+
+        if let rawValue = readEnvValue(for: "CODEX_BIN")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !rawValue.isEmpty {
+            let expanded = NSString(string: rawValue).expandingTildeInPath
+            if expanded.hasPrefix("/") {
+                if fm.isExecutableFile(atPath: expanded) {
+                    return expanded
+                }
+            } else {
+                let resolved = runShell("command -v \(q(expanded))")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !resolved.isEmpty {
+                    return resolved
+                }
+            }
+        }
+
+        let pathResolved = runShell("command -v codex")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pathResolved.isEmpty {
+            return pathResolved
+        }
+
+        for candidate in ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"] {
+            if fm.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     private func startBotCommand() -> String {
