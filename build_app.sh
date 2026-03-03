@@ -29,6 +29,8 @@ if [[ ! -d "$APP_PATH" ]]; then
   <string>local.botcontrol.app</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
+  <key>CFBundleIconFile</key>
+  <string>BotControl.icns</string>
   <key>CFBundleName</key>
   <string>BotControl</string>
   <key>CFBundlePackageType</key>
@@ -49,6 +51,12 @@ PLIST
 fi
 
 mkdir -p "$MACOS_PATH" "$RES_PATH" "$RUNTIME_PATH"
+
+# 始终校正图标键，避免历史包缺少 CFBundleIconFile 导致图标不显示。
+if [[ -f "$PLIST_PATH" ]] && command -v /usr/libexec/PlistBuddy >/dev/null 2>&1; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile BotControl.icns" "$PLIST_PATH" \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string BotControl.icns" "$PLIST_PATH"
+fi
 
 if [[ ! -f "$ICON_PATH" ]] && [[ -d "$ICONSET_PATH" ]] && command -v iconutil >/dev/null 2>&1; then
   iconutil -c icns "$ICONSET_PATH" -o "$ICON_PATH"

@@ -1162,10 +1162,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "初始化失败：读取资源目录失败"
         }
         let bundleRuntime = resourceURL.appendingPathComponent("BotRuntime")
-        let runtimeFiles = [
+        let requiredRuntimeFiles = [
             "bot.py",
             "requirements.txt",
-            ".env",
             ".env.example",
             "config.py",
             "env_store.py",
@@ -1176,8 +1175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "telegram_io.py",
             "skills.py",
         ]
+        let optionalRuntimeFiles = [
+            ".env",
+        ]
 
-        for name in runtimeFiles {
+        for name in requiredRuntimeFiles {
             let src = bundleRuntime.appendingPathComponent(name).path
             let dst = runtimeDir + "/" + name
             if !fm.fileExists(atPath: src) {
@@ -1194,6 +1196,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 return "初始化失败：复制 \(name) 失败"
+            }
+        }
+
+        for name in optionalRuntimeFiles {
+            let src = bundleRuntime.appendingPathComponent(name).path
+            let dst = runtimeDir + "/" + name
+            if !fm.fileExists(atPath: src) {
+                continue
+            }
+            do {
+                if fm.fileExists(atPath: dst) {
+                    continue
+                }
+                try fm.copyItem(atPath: src, toPath: dst)
+            } catch {
+                return "初始化失败：复制 \(name) 失败"
+            }
+        }
+
+        if !fm.fileExists(atPath: envPath) {
+            guard let templatePath = resolvedEnvExamplePath() else {
+                return "初始化失败：缺少资源 .env.example"
+            }
+            do {
+                try fm.copyItem(atPath: templatePath, toPath: envPath)
+            } catch {
+                return "初始化失败：创建 .env 失败"
             }
         }
 
