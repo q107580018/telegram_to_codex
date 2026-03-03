@@ -791,6 +791,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isWakeRecoveryInProgress || !primaryButton.isEnabled {
             return
         }
+        updatePathLabels()
         let running = isBotRunning()
         let uiRunning = primaryButton.title == "停止"
         if running == uiRunning {
