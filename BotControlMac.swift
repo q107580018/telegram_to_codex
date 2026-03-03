@@ -1242,6 +1242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "env_store.py",
             "chat_store.py",
             "handlers.py",
+            "polling_health.py",
             "codex_client.py",
             "project_service.py",
             "telegram_io.py",

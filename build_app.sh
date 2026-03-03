@@ -70,6 +70,7 @@ cp \
   "$ROOT_DIR/env_store.py" \
   "$ROOT_DIR/chat_store.py" \
   "$ROOT_DIR/handlers.py" \
+  "$ROOT_DIR/polling_health.py" \
   "$ROOT_DIR/project_service.py" \
   "$ROOT_DIR/telegram_io.py" \
   "$ROOT_DIR/skills.py" \
