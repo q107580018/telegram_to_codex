@@ -1338,10 +1338,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "初始化失败：未检测到 codex 命令（请先安装）"
         }
 
-        let setupCmd = "cd \(q(runtimeDir)) && if [ ! -x .venv/bin/python ]; then uv venv .venv; fi && uv pip install -r requirements.txt >/dev/null"
+        let setupCmd = "cd \(q(runtimeDir)) && " +
+            "if ! command -v uv >/dev/null 2>&1; then echo __BC_MISSING_UV__; exit 0; fi; " +
+            "if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1; then " +
+            "rm -rf .venv; " +
+            "uv venv --python 3.12 .venv >/dev/null 2>&1 || " +
+            "uv venv --python 3.11 .venv >/dev/null 2>&1 || " +
+            "uv venv --python 3.10 .venv >/dev/null 2>&1 || " +
+            "uv venv .venv >/dev/null 2>&1; " +
+            "fi; " +
+            "if [ ! -x .venv/bin/python ]; then echo __BC_PY_MISSING__; exit 0; fi; " +
+            "if ! .venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' >/dev/null 2>&1; then echo __BC_PY_TOO_OLD__; exit 0; fi; " +
+            "if uv pip install -r requirements.txt >/dev/null 2>&1; then echo __BC_SETUP_OK__; else echo __BC_SETUP_FAILED__; fi"
         let out = runShell(setupCmd)
-        if !FileManager.default.fileExists(atPath: pythonPath) {
-            return "初始化失败：Python 环境未就绪 \(out.trimmingCharacters(in: .whitespacesAndNewlines))"
+        if out.contains("__BC_MISSING_UV__") {
+            return "初始化失败：未检测到 uv（请先安装 uv）"
+        }
+        if out.contains("__BC_PY_TOO_OLD__") {
+            return "初始化失败：Python 版本过低（需要 Python 3.10+）"
+        }
+        if out.contains("__BC_PY_MISSING__") {
+            return "初始化失败：Python 环境创建失败（.venv 不可用）"
+        }
+        if out.contains("__BC_SETUP_FAILED__") || !out.contains("__BC_SETUP_OK__") {
+            return "初始化失败：Python 依赖安装失败 \(out.trimmingCharacters(in: .whitespacesAndNewlines))"
         }
 
         let addedCount = syncMissingEnvKeysFromTemplate()
