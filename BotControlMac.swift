@@ -1062,6 +1062,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if lowered.contains("no such file or directory") && lowered.contains("codex") {
             return "找不到 codex 命令，请安装 codex 或修正 CODEX_BIN。"
         }
+        if lowered.contains("unsupported operand type(s) for |")
+            && lowered.contains("nonetype")
+        {
+            return "当前 Python 版本过低（不兼容类型注解语法），请升级到 Python 3.10+。"
+        }
         return raw
     }
 

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from dataclasses import replace
+from typing import Optional
 
 from telegram import BotCommand, Update
 from telegram.error import Conflict, NetworkError, TimedOut
@@ -59,7 +60,7 @@ class BotHandlers:
         user = update.effective_user
         return bool(user and user.id in self.allowed_user_ids)
 
-    def get_chat_id(self, update: Update) -> int | None:
+    def get_chat_id(self, update: Update) -> Optional[int]:
         chat = update.effective_chat
         return chat.id if chat else None
 
@@ -125,7 +126,7 @@ class BotHandlers:
             await self.restart_polling(application)
 
     async def ask_codex_with_retry(self, prompt: str) -> tuple[str, dict]:
-        last_exc: Exception | None = None
+        last_exc: Optional[Exception] = None
         for attempt in range(self.codex_max_retries):
             try:
                 return await asyncio.to_thread(

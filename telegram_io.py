@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 
 from telegram import Message, Update
 from telegram.error import NetworkError, TimedOut
@@ -15,7 +16,7 @@ async def reply_text_with_retry(update: Update, text: str) -> None:
             await asyncio.sleep(0.8 * (2**i))
 
 
-async def send_message_with_retry(update: Update, text: str) -> Message | None:
+async def send_message_with_retry(update: Update, text: str) -> Optional[Message]:
     for i in range(3):
         try:
             return await update.message.reply_text(text)
