@@ -50,6 +50,7 @@ class BotHandlers:
         self.polling_consecutive_network_errors = 0
         self.polling_last_restart_monotonic = 0.0
         self.polling_restart_lock = asyncio.Lock()
+        self.wake_watchdog_task: Optional[asyncio.Task] = None
 
     def runtime_config(self) -> AppConfig:
         return replace(self.config, codex_project_dir=self.project_service.project_dir)
@@ -112,18 +113,22 @@ class BotHandlers:
 
     async def wake_watchdog(self, application) -> None:
         last_tick = time.monotonic()
-        while True:
-            await asyncio.sleep(self.wake_watchdog_interval_sec)
-            now = time.monotonic()
-            gap = now - last_tick
-            last_tick = now
-            if gap < self.wake_gap_threshold_sec:
-                continue
-            self.logger.warning(
-                "检测到系统可能经历睡眠/唤醒（事件循环停顿 %.1f 秒），尝试重启 polling。",
-                gap,
-            )
-            await self.restart_polling(application)
+        try:
+            while True:
+                await asyncio.sleep(self.wake_watchdog_interval_sec)
+                now = time.monotonic()
+                gap = now - last_tick
+                last_tick = now
+                if gap < self.wake_gap_threshold_sec:
+                    continue
+                self.logger.warning(
+                    "检测到系统可能经历睡眠/唤醒（事件循环停顿 %.1f 秒），尝试重启 polling。",
+                    gap,
+                )
+                await self.restart_polling(application)
+        except asyncio.CancelledError:
+            self.logger.info("wake_watchdog 已停止。")
+            raise
 
     async def ask_codex_with_retry(self, prompt: str) -> tuple[str, dict]:
         last_exc: Optional[Exception] = None
@@ -300,7 +305,10 @@ class BotHandlers:
         self.chat_store.append_command_history(chat_id, "/history", reply)
 
     async def post_init(self, app) -> None:
-        app.create_task(self.wake_watchdog(app), name="wake_watchdog")
+        if not self.wake_watchdog_task or self.wake_watchdog_task.done():
+            self.wake_watchdog_task = asyncio.create_task(
+                self.wake_watchdog(app), name="wake_watchdog"
+            )
         await app.bot.set_my_commands(
             [
                 BotCommand("new", "新建对话（清空上下文）"),
@@ -312,6 +320,19 @@ class BotHandlers:
                 BotCommand("start", "显示帮助"),
             ]
         )
+
+    async def post_shutdown(self, app) -> None:
+        task = self.wake_watchdog_task
+        if not task:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.wake_watchdog_task = None
 
     async def on_error(
         self, update: object, context: ContextTypes.DEFAULT_TYPE

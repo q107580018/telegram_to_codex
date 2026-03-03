@@ -58,7 +58,7 @@ if [[ -f "$PLIST_PATH" ]] && command -v /usr/libexec/PlistBuddy >/dev/null 2>&1;
     || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string BotControl.icns" "$PLIST_PATH"
 fi
 
-if [[ ! -f "$ICON_PATH" ]] && [[ -d "$ICONSET_PATH" ]] && command -v iconutil >/dev/null 2>&1; then
+if [[ -d "$ICONSET_PATH" ]] && command -v iconutil >/dev/null 2>&1; then
   iconutil -c icns "$ICONSET_PATH" -o "$ICON_PATH"
 fi
 

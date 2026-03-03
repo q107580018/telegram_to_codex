@@ -195,7 +195,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
-    private let statusBadge = NSTextField(labelWithString: "准备中")
     private let projectPathLabel = NSTextField(labelWithString: "项目目录：读取中...")
     private let envPathLabel = NSTextField(labelWithString: "配置文件：读取中...")
     private let primaryButton = HoverButton(title: "启动", target: nil, action: nil)
@@ -527,27 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         titleStack.orientation = .vertical
         titleStack.spacing = 4
         titleStack.alignment = .leading
-
-        statusBadge.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
-        statusBadge.alignment = .center
-        statusBadge.translatesAutoresizingMaskIntoConstraints = false
-        statusBadge.wantsLayer = true
-        statusBadge.layer?.cornerRadius = 10
-        statusBadge.layer?.cornerCurve = .continuous
-        statusBadge.layer?.masksToBounds = true
-        statusBadge.setContentHuggingPriority(.required, for: .horizontal)
-        statusBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
-        NSLayoutConstraint.activate([
-            statusBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
-            statusBadge.heightAnchor.constraint(equalToConstant: 26),
-        ])
-
-        let headerSpacer = NSView()
-        let headerRow = NSStackView(views: [titleStack, headerSpacer, statusBadge])
-        headerRow.orientation = .horizontal
-        headerRow.alignment = .top
-        headerRow.spacing = 14
-        rootStack.addArrangedSubview(headerRow)
+        rootStack.addArrangedSubview(titleStack)
 
         let statusPanel = makePanel()
         let statusStack = NSStackView()
@@ -674,7 +653,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         footer.lineBreakMode = .byTruncatingTail
         rootStack.addArrangedSubview(footer)
 
-        configureStatusBadge(text: "准备中", color: .systemOrange)
         updatePathLabels()
         statusDot.setAccessibilityLabel("机器人状态指示")
 
@@ -693,14 +671,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.layer?.borderWidth = 1
         panel.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.25).cgColor
         return panel
-    }
-
-    private func configureStatusBadge(text: String, color: NSColor) {
-        statusBadge.stringValue = text
-        statusBadge.textColor = color
-        statusBadge.layer?.borderWidth = 1
-        statusBadge.layer?.borderColor = color.withAlphaComponent(0.35).cgColor
-        statusBadge.layer?.backgroundColor = color.withAlphaComponent(0.12).cgColor
     }
 
     private func updatePathLabels() {
@@ -989,7 +959,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setPendingUI(_ text: String) {
         statusDot.setColor(.systemOrange)
         statusLabel.stringValue = "状态：\(text)"
-        configureStatusBadge(text: "处理中", color: .systemOrange)
         detailLabel.stringValue = text
         updatePathLabels()
     }
@@ -1000,12 +969,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusDot.setColor(.systemGreen)
             statusLabel.stringValue = "状态：运行中"
             primaryButton.title = "停止"
-            configureStatusBadge(text: "运行中", color: .systemGreen)
         } else {
             statusDot.setColor(.systemRed)
             statusLabel.stringValue = "状态：已停止"
             primaryButton.title = "启动"
-            configureStatusBadge(text: "已停止", color: .systemRed)
         }
 
         if let message, !message.isEmpty {

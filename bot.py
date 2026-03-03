@@ -207,7 +207,9 @@ def main() -> int:
             builder = builder.proxy(effective_proxy_url).get_updates_proxy(
                 effective_proxy_url
             )
-        builder = builder.post_init(handlers.post_init)
+        builder = builder.post_init(handlers.post_init).post_shutdown(
+            handlers.post_shutdown
+        )
         app = builder.build()
 
         app.add_handler(CommandHandler("start", handlers.start))
