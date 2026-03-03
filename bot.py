@@ -193,41 +193,47 @@ def build_handlers(logger: logging.Logger) -> BotHandlers:
     )
 
 
-def main() -> None:
+def main() -> int:
     setup_logging()
     logger = logging.getLogger(__name__)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    try:
+        handlers = build_handlers(logger)
+        effective_proxy_url = resolve_telegram_proxy_url(handlers, logger)
 
-    handlers = build_handlers(logger)
-    effective_proxy_url = resolve_telegram_proxy_url(handlers, logger)
+        builder = ApplicationBuilder().token(handlers.config.telegram_bot_token)
+        if effective_proxy_url:
+            builder = builder.proxy(effective_proxy_url).get_updates_proxy(
+                effective_proxy_url
+            )
+        builder = builder.post_init(handlers.post_init)
+        app = builder.build()
 
-    builder = ApplicationBuilder().token(handlers.config.telegram_bot_token)
-    if effective_proxy_url:
-        builder = builder.proxy(effective_proxy_url).get_updates_proxy(effective_proxy_url)
-    builder = builder.post_init(handlers.post_init)
-    app = builder.build()
+        app.add_handler(CommandHandler("start", handlers.start))
+        app.add_handler(CommandHandler("new", handlers.new_chat))
+        app.add_handler(CommandHandler("skills", handlers.skills))
+        app.add_handler(CommandHandler("status", handlers.status))
+        app.add_handler(CommandHandler("setproject", handlers.setproject))
+        app.add_handler(CommandHandler("getproject", handlers.getproject))
+        app.add_handler(CommandHandler("history", handlers.history))
+        app.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_message)
+        )
+        app.add_error_handler(handlers.on_error)
 
-    app.add_handler(CommandHandler("start", handlers.start))
-    app.add_handler(CommandHandler("new", handlers.new_chat))
-    app.add_handler(CommandHandler("skills", handlers.skills))
-    app.add_handler(CommandHandler("status", handlers.status))
-    app.add_handler(CommandHandler("setproject", handlers.setproject))
-    app.add_handler(CommandHandler("getproject", handlers.getproject))
-    app.add_handler(CommandHandler("history", handlers.history))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.handle_message)
-    )
-    app.add_error_handler(handlers.on_error)
-
-    logger.info(
-        "Bot is running with model: %s",
-        handlers.config.codex_model or "default codex config",
-    )
-    app.run_polling(
-        timeout=POLLING_TIMEOUT_SEC, bootstrap_retries=POLLING_BOOTSTRAP_RETRIES
-    )
+        logger.info(
+            "Bot is running with model: %s",
+            handlers.config.codex_model or "default codex config",
+        )
+        app.run_polling(
+            timeout=POLLING_TIMEOUT_SEC, bootstrap_retries=POLLING_BOOTSTRAP_RETRIES
+        )
+        return 0
+    except Exception:
+        logger.exception("Bot startup failed")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

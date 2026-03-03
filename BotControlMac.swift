@@ -802,8 +802,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setPendingUI("启动中...")
         DispatchQueue.global(qos: .userInitiated).async {
             let out = self.startBotCommand()
+            let message = self.messageForStartCommandOutput(out)
             DispatchQueue.main.async {
-                self.refreshStatus(message: out)
+                self.refreshStatus(message: message)
                 self.shouldKeepBotRunning = self.isBotRunning()
                 self.setControlButtonsEnabled(true)
             }
@@ -1023,6 +1024,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             detailLabel.stringValue = "运行环境：App 内置"
         }
         updatePathLabels()
+    }
+
+    private func messageForStartCommandOutput(_ rawOutput: String) -> String {
+        let output = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if output == "failed" {
+            if let reason = readLastLaunchErrorLine() {
+                return "启动失败：\(reason)"
+            }
+            return "启动失败"
+        }
+        return output
+    }
+
+    private func readLastLaunchErrorLine() -> String? {
+        guard let content = try? String(contentsOfFile: launchLogPath, encoding: .utf8) else {
+            return nil
+        }
+        let lines = content.components(separatedBy: .newlines)
+        for line in lines.reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                continue
+            }
+            return trimmed
+        }
+        return nil
     }
 
     private func extractEnvKey(from line: String, includeCommented: Bool) -> String? {
