@@ -190,6 +190,15 @@ def build_handlers(logger: logging.Logger) -> BotHandlers:
             "TELEGRAM_WAKE_GAP_THRESHOLD_SEC", 90.0
         ),
         system_prompt=SYSTEM_PROMPT,
+        polling_max_restarts_per_window=_read_positive_int_env(
+            "TELEGRAM_POLLING_MAX_RESTARTS_PER_WINDOW", 4
+        ),
+        polling_restart_window_sec=_read_positive_float_env(
+            "TELEGRAM_POLLING_RESTART_WINDOW_SEC", 300.0
+        ),
+        polling_escalate_exit_code=_read_positive_int_env(
+            "TELEGRAM_ESCALATE_EXIT_CODE", 75
+        ),
     )
 
 
@@ -231,6 +240,8 @@ def main() -> int:
         app.run_polling(
             timeout=POLLING_TIMEOUT_SEC, bootstrap_retries=POLLING_BOOTSTRAP_RETRIES
         )
+        if handlers.escalate_exit_code_requested is not None:
+            return handlers.escalate_exit_code_requested
         return 0
     except Exception:
         logger.exception("Bot startup failed")

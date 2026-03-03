@@ -11,6 +11,7 @@ from telegram.ext import ContextTypes
 from chat_store import ChatStore
 from codex_client import ask_codex_with_meta, build_prompt, get_codex_runtime_info
 from config import AppConfig
+from polling_health import PollingHealthManager
 from project_service import ProjectService
 from skills import list_available_skills
 from telegram_io import keep_typing, reply_text_with_retry, send_message_with_retry
@@ -32,6 +33,9 @@ class BotHandlers:
         wake_watchdog_interval_sec: float,
         wake_gap_threshold_sec: float,
         system_prompt: str,
+        polling_max_restarts_per_window: int,
+        polling_restart_window_sec: float,
+        polling_escalate_exit_code: int,
     ):
         self.config = config
         self.project_service = project_service
@@ -46,9 +50,15 @@ class BotHandlers:
         self.wake_watchdog_interval_sec = wake_watchdog_interval_sec
         self.wake_gap_threshold_sec = wake_gap_threshold_sec
         self.system_prompt = system_prompt
+        self.polling_escalate_exit_code = polling_escalate_exit_code
+        self.escalate_exit_code_requested: Optional[int] = None
 
-        self.polling_consecutive_network_errors = 0
-        self.polling_last_restart_monotonic = 0.0
+        self.polling_health = PollingHealthManager(
+            restart_threshold=polling_restart_threshold,
+            restart_cooldown_sec=polling_restart_cooldown_sec,
+            max_restarts_per_window=polling_max_restarts_per_window,
+            restart_window_sec=polling_restart_window_sec,
+        )
         self.polling_restart_lock = asyncio.Lock()
         self.wake_watchdog_task: Optional[asyncio.Task] = None
 
@@ -66,12 +76,22 @@ class BotHandlers:
         return chat.id if chat else None
 
     def mark_polling_healthy(self) -> None:
-        if self.polling_consecutive_network_errors > 0:
+        snapshot = self.polling_health.snapshot(now=time.monotonic())
+        prev_errors = snapshot.get("consecutive_network_errors", 0)
+        if prev_errors > 0:
             self.logger.info(
                 "Telegram 轮询已恢复，连续网络错误计数已清零（之前=%s）。",
-                self.polling_consecutive_network_errors,
+                prev_errors,
             )
-        self.polling_consecutive_network_errors = 0
+        self.polling_health.mark_healthy(now=time.monotonic())
+
+    def request_process_escalation(self, reason: str) -> None:
+        self.escalate_exit_code_requested = self.polling_escalate_exit_code
+        self.logger.error(
+            "Polling escalation requested: reason=%s exit_code=%s",
+            reason,
+            self.polling_escalate_exit_code,
+        )
 
     def forward_polling_error(self, app, exc: Exception) -> None:
         app.create_task(app.process_error(error=exc, update=None))
@@ -79,22 +99,8 @@ class BotHandlers:
     async def restart_polling(self, application) -> None:
         if not application.updater:
             return
-        now = time.monotonic()
-        if (
-            now - self.polling_last_restart_monotonic
-            < self.polling_restart_cooldown_sec
-        ):
-            return
 
         async with self.polling_restart_lock:
-            now = time.monotonic()
-            if (
-                now - self.polling_last_restart_monotonic
-                < self.polling_restart_cooldown_sec
-            ):
-                return
-            self.polling_last_restart_monotonic = now
-
             self.logger.warning("检测到连续网络异常，开始重启 Telegram polling。")
             try:
                 if application.updater.running:
@@ -106,10 +112,17 @@ class BotHandlers:
                         application, exc
                     ),
                 )
-                self.mark_polling_healthy()
+                self.polling_health.record_restart_result(now=time.monotonic(), success=True)
                 self.logger.info("Telegram polling 重启成功。")
             except Exception as exc:
+                self.polling_health.record_restart_result(
+                    now=time.monotonic(), success=False
+                )
                 self.logger.exception("Telegram polling 重启失败。", exc_info=exc)
+                snapshot = self.polling_health.snapshot(now=time.monotonic())
+                if snapshot.get("state") == "escalated":
+                    self.request_process_escalation("restart_failed")
+                    await application.stop()
 
     async def wake_watchdog(self, application) -> None:
         last_tick = time.monotonic()
@@ -125,7 +138,13 @@ class BotHandlers:
                     "检测到系统可能经历睡眠/唤醒（事件循环停顿 %.1f 秒），尝试重启 polling。",
                     gap,
                 )
-                await self.restart_polling(application)
+                decision = self.polling_health.record_watchdog_gap(now=now, gap_sec=gap)
+                if decision.should_escalate_process:
+                    self.request_process_escalation("watchdog_gap")
+                    await application.stop()
+                    return
+                if decision.should_restart_polling:
+                    await self.restart_polling(application)
         except asyncio.CancelledError:
             self.logger.info("wake_watchdog 已停止。")
             raise
@@ -207,7 +226,14 @@ class BotHandlers:
             return
 
         usage = self.chat_store.usage_stats.get(chat_id) or {}
-        reply = (
+        reply = self.render_status_text(runtime_info=runtime_info, usage=usage)
+
+        await reply_text_with_retry(update, reply)
+        self.chat_store.append_command_history(chat_id, "/status", reply)
+
+    def render_status_text(self, runtime_info: dict, usage: dict) -> str:
+        health = self.polling_health.snapshot(now=time.monotonic())
+        return (
             "当前会话状态：\n"
             "Token Usage:\n"
             f"- Last: in={usage.get('last_input_tokens', 0)}, "
@@ -221,11 +247,13 @@ class BotHandlers:
             "Plan/Model:\n"
             f"- Plan: {runtime_info.get('login') or 'unknown'}\n"
             f"- Model: {runtime_info.get('model')}\n"
-            f"- CLI: {runtime_info.get('version') or 'unknown'}"
+            f"- CLI: {runtime_info.get('version') or 'unknown'}\n"
+            "Polling Health:\n"
+            f"- state={health.get('state')}\n"
+            f"- consecutive_errors={health.get('consecutive_network_errors', 0)}\n"
+            f"- restarts_in_window={health.get('restarts_in_window', 0)}\n"
+            f"- last_event={health.get('last_event') or 'none'}"
         )
-
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, "/status", reply)
 
     async def setproject(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -345,16 +373,20 @@ class BotHandlers:
             await context.application.stop()
             return
         if update is None and isinstance(err, (NetworkError, TimedOut)):
-            self.polling_consecutive_network_errors += 1
+            decision = self.polling_health.record_network_error(now=time.monotonic())
+            snapshot = self.polling_health.snapshot(now=time.monotonic())
             self.logger.warning(
-                "Telegram 轮询网络异常（连续 %s 次）：%s",
-                self.polling_consecutive_network_errors,
+                "Telegram 轮询网络异常：state=%s consecutive_errors=%s restarts_in_window=%s err=%s",
+                snapshot.get("state"),
+                snapshot.get("consecutive_network_errors"),
+                snapshot.get("restarts_in_window"),
                 err,
             )
-            if (
-                self.polling_consecutive_network_errors
-                >= self.polling_restart_threshold
-            ):
+            if decision.should_escalate_process:
+                self.request_process_escalation("network_error_loop")
+                await context.application.stop()
+                return
+            if decision.should_restart_polling:
                 asyncio.create_task(self.restart_polling(context.application))
             return
         self.logger.exception("Unhandled bot error", exc_info=err)

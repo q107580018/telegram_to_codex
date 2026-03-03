@@ -30,6 +30,7 @@ cp .env.example .env
 > 可设置 `CHAT_MAX_TURNS` 控制上下文保留轮次（默认 12 轮）。
 > 日志默认按大小轮转：`BOT_LOG_MAX_BYTES`（默认 5MB）与 `BOT_LOG_BACKUP_COUNT`（默认 5 份）。
 > 如遇系统睡眠/唤醒后偶发失联，可调 `TELEGRAM_WAKE_WATCHDOG_INTERVAL_SEC` 与 `TELEGRAM_WAKE_GAP_THRESHOLD_SEC`。
+> 轮询稳定性参数可调：`TELEGRAM_POLLING_RESTART_THRESHOLD`、`TELEGRAM_POLLING_RESTART_COOLDOWN_SEC`、`TELEGRAM_POLLING_MAX_RESTARTS_PER_WINDOW`、`TELEGRAM_POLLING_RESTART_WINDOW_SEC`、`TELEGRAM_ESCALATE_EXIT_CODE`。
 
 ## 4) 启动
 
@@ -60,7 +61,7 @@ cp .env.example .env
 
 - `/start` 开始
 - `/new` 新建对话（清空上下文）
-- `/status` 查看 Codex 状态
+- `/status` 查看 Codex 状态与轮询健康摘要
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息
