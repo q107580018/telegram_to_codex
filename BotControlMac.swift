@@ -212,7 +212,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var logPath: String { runtimeDir + "/bot.log" }
     private var launchLogPath: String { runtimeDir + "/bot.launch.log" }
     private var envPath: String { runtimeDir + "/.env" }
-    private var envExamplePath: String { runtimeDir + "/.env.example" }
+    private var runtimeEnvExamplePath: String { runtimeDir + "/.env.example" }
+    private var bundledEnvExamplePath: String? {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            return nil
+        }
+        return resourceURL
+            .appendingPathComponent("BotRuntime")
+            .appendingPathComponent(".env.example")
+            .path
+    }
+
+    private func resolvedEnvExamplePath() -> String? {
+        let fm = FileManager.default
+        if let bundledPath = bundledEnvExamplePath, fm.fileExists(atPath: bundledPath) {
+            return bundledPath
+        }
+        if fm.fileExists(atPath: runtimeEnvExamplePath) {
+            return runtimeEnvExamplePath
+        }
+        return nil
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -798,14 +818,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !fm.fileExists(atPath: runtimeDir) {
                     try fm.createDirectory(atPath: runtimeDir, withIntermediateDirectories: true)
                 }
-                guard fm.fileExists(atPath: envExamplePath) else {
+                guard let templatePath = resolvedEnvExamplePath() else {
                     showAlert(
                         title: "打开配置失败",
-                        text: "未找到 .env.example，请先启动一次应用完成运行时初始化。"
+                        text: "未找到 .env.example（App 内置与 runtime 均不存在）。"
                     )
                     return
                 }
-                try fm.copyItem(atPath: envExamplePath, toPath: envPath)
+                try fm.copyItem(atPath: templatePath, toPath: envPath)
             } catch {
                 showAlert(
                     title: "打开配置失败",
@@ -1013,7 +1033,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func syncMissingEnvKeysFromTemplate() -> Int {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: envPath), fm.fileExists(atPath: envExamplePath) else {
+        guard
+            fm.fileExists(atPath: envPath),
+            let templatePath = resolvedEnvExamplePath()
+        else {
             return 0
         }
 
@@ -1021,7 +1044,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let templateText: String
         do {
             runtimeText = try String(contentsOfFile: envPath, encoding: .utf8)
-            templateText = try String(contentsOfFile: envExamplePath, encoding: .utf8)
+            templateText = try String(contentsOfFile: templatePath, encoding: .utf8)
         } catch {
             return 0
         }
