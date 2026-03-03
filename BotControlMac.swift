@@ -56,6 +56,13 @@ final class HoverButton: NSButton {
         didSet { refreshAppearance() }
     }
 
+    override var isEnabled: Bool {
+        didSet {
+            refreshAppearance()
+            refreshTitleColor()
+        }
+    }
+
     override var title: String {
         didSet { refreshTitleColor() }
     }
@@ -113,6 +120,20 @@ final class HoverButton: NSButton {
         layer.cornerCurve = .continuous
         layer.borderWidth = 1.6
         layer.masksToBounds = false
+
+        if !isEnabled {
+            let disabledBackground = NSColor.controlBackgroundColor.withAlphaComponent(0.35)
+            layer.backgroundColor = disabledBackground.cgColor
+            gradientLayer.colors = [
+                disabledBackground.cgColor,
+                disabledBackground.cgColor,
+            ]
+            layer.borderColor = NSColor.separatorColor.withAlphaComponent(0.2).cgColor
+            layer.shadowOpacity = 0
+            layer.transform = CATransform3DIdentity
+            return
+        }
+
         let baseColor: NSColor
         if isHighlighted {
             baseColor = pressedBackgroundColor
@@ -147,11 +168,12 @@ final class HoverButton: NSButton {
 
     private func refreshTitleColor() {
         let titleString = title
+        let titleColor = isEnabled ? normalTextColor : NSColor.disabledControlTextColor
         attributedTitle = NSAttributedString(
             string: titleString,
             attributes: [
                 .font: font ?? NSFont.systemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: normalTextColor,
+                .foregroundColor: titleColor,
             ]
         )
     }
@@ -171,6 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
+    private let statusBadge = NSTextField(labelWithString: "准备中")
+    private let projectPathLabel = NSTextField(labelWithString: "项目目录：读取中...")
+    private let envPathLabel = NSTextField(labelWithString: "配置文件：读取中...")
     private let primaryButton = HoverButton(title: "启动", target: nil, action: nil)
     private let refreshButton = HoverButton(title: "刷新状态", target: nil, action: nil)
     private let logButton = HoverButton(title: "查看日志", target: nil, action: nil)
@@ -364,7 +389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         isWakeRecoveryInProgress = true
-        primaryButton.isEnabled = false
+        setControlButtonsEnabled(false)
         setPendingUI("唤醒恢复中...")
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -372,7 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let startOut = self.startBotCommand()
             DispatchQueue.main.async {
                 self.isWakeRecoveryInProgress = false
-                self.primaryButton.isEnabled = true
+                self.setControlButtonsEnabled(true)
                 self.shouldKeepBotRunning = self.isBotRunning()
                 self.refreshStatus(message: "唤醒恢复：\(startOut)")
             }
@@ -381,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildUI() {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 980, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 1024, height: 560),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -391,7 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor.windowBackgroundColor
-        window.minSize = NSSize(width: 900, height: 430)
+        window.minSize = NSSize(width: 900, height: 500)
         window.center()
         window.isReleasedWhenClosed = false
 
@@ -408,7 +433,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         card.blendingMode = .withinWindow
         card.state = .active
         card.wantsLayer = true
-        card.layer?.cornerRadius = 18
+        card.layer?.cornerRadius = 20
+        card.layer?.cornerCurve = .continuous
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.2).cgColor
         card.layer?.masksToBounds = true
         background.addSubview(card)
 
@@ -419,119 +447,262 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             card.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -24),
         ])
 
-        let content = NSView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(content)
+        let rootStack = NSStackView()
+        rootStack.translatesAutoresizingMaskIntoConstraints = false
+        rootStack.orientation = .vertical
+        rootStack.spacing = 16
+        rootStack.alignment = .leading
+        rootStack.edgeInsets = NSEdgeInsets(top: 26, left: 24, bottom: 22, right: 24)
+        card.addSubview(rootStack)
 
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 28),
-            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 26),
-            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -26),
-            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -24),
+            rootStack.topAnchor.constraint(equalTo: card.topAnchor),
+            rootStack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            rootStack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            rootStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
         ])
 
         let title = NSTextField(labelWithString: "Telegram Bot 控制器")
-        title.translatesAutoresizingMaskIntoConstraints = false
-        title.font = NSFont.systemFont(ofSize: 30, weight: .bold)
+        title.font = NSFont.systemFont(ofSize: 31, weight: .bold)
         title.textColor = .labelColor
-        content.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: "本地 Codex Runtime · Telegram 控制面板")
-        subtitle.translatesAutoresizingMaskIntoConstraints = false
         subtitle.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         subtitle.textColor = .secondaryLabelColor
-        content.addSubview(subtitle)
+        let titleStack = NSStackView(views: [title, subtitle])
+        titleStack.orientation = .vertical
+        titleStack.spacing = 4
+        titleStack.alignment = .leading
+
+        statusBadge.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        statusBadge.alignment = .center
+        statusBadge.translatesAutoresizingMaskIntoConstraints = false
+        statusBadge.wantsLayer = true
+        statusBadge.layer?.cornerRadius = 10
+        statusBadge.layer?.cornerCurve = .continuous
+        statusBadge.layer?.masksToBounds = true
+        statusBadge.setContentHuggingPriority(.required, for: .horizontal)
+        statusBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            statusBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 92),
+            statusBadge.heightAnchor.constraint(equalToConstant: 26),
+        ])
+
+        let headerSpacer = NSView()
+        let headerRow = NSStackView(views: [titleStack, headerSpacer, statusBadge])
+        headerRow.orientation = .horizontal
+        headerRow.alignment = .top
+        headerRow.spacing = 14
+        rootStack.addArrangedSubview(headerRow)
+
+        let statusPanel = makePanel()
+        let statusStack = NSStackView()
+        statusStack.translatesAutoresizingMaskIntoConstraints = false
+        statusStack.orientation = .vertical
+        statusStack.alignment = .leading
+        statusStack.spacing = 9
+        statusPanel.addSubview(statusStack)
+        NSLayoutConstraint.activate([
+            statusStack.topAnchor.constraint(equalTo: statusPanel.topAnchor, constant: 14),
+            statusStack.leadingAnchor.constraint(equalTo: statusPanel.leadingAnchor, constant: 16),
+            statusStack.trailingAnchor.constraint(equalTo: statusPanel.trailingAnchor, constant: -16),
+            statusStack.bottomAnchor.constraint(equalTo: statusPanel.bottomAnchor, constant: -14),
+        ])
 
         statusDot.translatesAutoresizingMaskIntoConstraints = false
-        content.addSubview(statusDot)
+        statusLabel.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let statusRow = NSStackView(views: [statusDot, statusLabel])
+        statusRow.orientation = .horizontal
+        statusRow.alignment = .centerY
+        statusRow.spacing = 10
+        NSLayoutConstraint.activate([
+            statusDot.widthAnchor.constraint(equalToConstant: 14),
+            statusDot.heightAnchor.constraint(equalToConstant: 14),
+        ])
+        statusStack.addArrangedSubview(statusRow)
 
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.font = NSFont.systemFont(ofSize: 17, weight: .semibold)
-        content.addSubview(statusLabel)
-
-        detailLabel.translatesAutoresizingMaskIntoConstraints = false
         detailLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         detailLabel.textColor = .secondaryLabelColor
         detailLabel.lineBreakMode = .byTruncatingMiddle
         detailLabel.stringValue = "运行环境：App 内置"
-        content.addSubview(detailLabel)
+        detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        statusStack.addArrangedSubview(detailLabel)
+
+        let projectCaption = NSTextField(labelWithString: "项目目录")
+        projectCaption.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        projectCaption.textColor = .tertiaryLabelColor
+        statusStack.addArrangedSubview(projectCaption)
+
+        projectPathLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        projectPathLabel.textColor = .secondaryLabelColor
+        projectPathLabel.lineBreakMode = .byTruncatingMiddle
+        projectPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        statusStack.addArrangedSubview(projectPathLabel)
+
+        let envCaption = NSTextField(labelWithString: "配置文件")
+        envCaption.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        envCaption.textColor = .tertiaryLabelColor
+        statusStack.addArrangedSubview(envCaption)
+
+        envPathLabel.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        envPathLabel.textColor = .secondaryLabelColor
+        envPathLabel.lineBreakMode = .byTruncatingMiddle
+        envPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        statusStack.addArrangedSubview(envPathLabel)
+
+        rootStack.addArrangedSubview(statusPanel)
+        statusPanel.widthAnchor.constraint(equalTo: rootStack.widthAnchor, constant: -48).isActive = true
 
         primaryButton.title = "启动"
         primaryButton.target = self
         primaryButton.action = #selector(primaryTapped)
         stylePrimaryButton(primaryButton)
+        primaryButton.keyEquivalent = "\r"
+        primaryButton.keyEquivalentModifierMask = []
+        primaryButton.setAccessibilityLabel("启动或停止机器人")
 
         refreshButton.title = "刷新状态"
         refreshButton.target = self
         refreshButton.action = #selector(refreshMenuTapped)
         styleSecondaryButton(refreshButton, symbolName: "arrow.clockwise")
+        refreshButton.keyEquivalent = "r"
+        refreshButton.keyEquivalentModifierMask = [.command]
+        refreshButton.setAccessibilityLabel("刷新机器人状态")
 
         logButton.title = "查看日志"
         logButton.target = self
         logButton.action = #selector(openLogTapped)
         styleSecondaryButton(logButton, symbolName: "doc.text.magnifyingglass")
+        logButton.keyEquivalent = "l"
+        logButton.keyEquivalentModifierMask = [.command]
+        logButton.setAccessibilityLabel("打开机器人日志窗口")
 
         configButton.title = "打开配置"
         configButton.target = self
         configButton.action = #selector(openConfigTapped)
         styleSecondaryButton(configButton, symbolName: "slider.horizontal.3")
+        configButton.keyEquivalent = ","
+        configButton.keyEquivalentModifierMask = [.command]
+        configButton.setAccessibilityLabel("打开运行时配置文件")
 
-        let buttonRow = NSStackView(views: [primaryButton, refreshButton, logButton, configButton])
-        buttonRow.translatesAutoresizingMaskIntoConstraints = false
-        buttonRow.orientation = .horizontal
-        buttonRow.spacing = 16
-        buttonRow.distribution = .fillEqually
-        buttonRow.alignment = .centerY
-        content.addSubview(buttonRow)
-
-        primaryButton.translatesAutoresizingMaskIntoConstraints = false
-        refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        logButton.translatesAutoresizingMaskIntoConstraints = false
-        configButton.translatesAutoresizingMaskIntoConstraints = false
-
+        let actionPanel = makePanel()
+        let actionStack = NSStackView()
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
+        actionStack.orientation = .vertical
+        actionStack.spacing = 10
+        actionPanel.addSubview(actionStack)
         NSLayoutConstraint.activate([
-            primaryButton.heightAnchor.constraint(equalToConstant: 90),
+            actionStack.topAnchor.constraint(equalTo: actionPanel.topAnchor, constant: 14),
+            actionStack.leadingAnchor.constraint(equalTo: actionPanel.leadingAnchor, constant: 16),
+            actionStack.trailingAnchor.constraint(equalTo: actionPanel.trailingAnchor, constant: -16),
+            actionStack.bottomAnchor.constraint(equalTo: actionPanel.bottomAnchor, constant: -14),
+        ])
+
+        let topButtonRow = NSStackView(views: [primaryButton, refreshButton])
+        topButtonRow.orientation = .horizontal
+        topButtonRow.spacing = 12
+        topButtonRow.distribution = .fillEqually
+        topButtonRow.alignment = .centerY
+
+        let bottomButtonRow = NSStackView(views: [logButton, configButton])
+        bottomButtonRow.orientation = .horizontal
+        bottomButtonRow.spacing = 12
+        bottomButtonRow.distribution = .fillEqually
+        bottomButtonRow.alignment = .centerY
+
+        actionStack.addArrangedSubview(topButtonRow)
+        actionStack.addArrangedSubview(bottomButtonRow)
+        NSLayoutConstraint.activate([
+            primaryButton.heightAnchor.constraint(equalToConstant: 58),
             refreshButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
             logButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
             configButton.heightAnchor.constraint(equalTo: primaryButton.heightAnchor),
         ])
 
-        let hint = NSTextField(labelWithString: "关闭窗口会自动停止 bot")
-        hint.translatesAutoresizingMaskIntoConstraints = false
-        hint.font = NSFont.systemFont(ofSize: 12)
-        hint.textColor = .secondaryLabelColor
-        content.addSubview(hint)
+        let actionHint = NSTextField(
+            labelWithString: "快捷键：⌘R 刷新状态 · ⌘L 查看日志 · ⌘, 打开配置 · Enter 启动/停止"
+        )
+        actionHint.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        actionHint.textColor = .tertiaryLabelColor
+        actionHint.lineBreakMode = .byTruncatingTail
+        actionStack.addArrangedSubview(actionHint)
 
-        NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: content.topAnchor),
-            title.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+        rootStack.addArrangedSubview(actionPanel)
+        actionPanel.widthAnchor.constraint(equalTo: rootStack.widthAnchor, constant: -48).isActive = true
 
-            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
-            subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+        let footer = NSTextField(labelWithString: "提示：关闭窗口会自动停止 bot，唤醒后若之前在运行会自动恢复。")
+        footer.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+        footer.textColor = .secondaryLabelColor
+        footer.lineBreakMode = .byTruncatingTail
+        rootStack.addArrangedSubview(footer)
 
-            statusDot.topAnchor.constraint(equalTo: subtitle.bottomAnchor, constant: 22),
-            statusDot.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 2),
-            statusDot.widthAnchor.constraint(equalToConstant: 14),
-            statusDot.heightAnchor.constraint(equalToConstant: 14),
-
-            statusLabel.centerYAnchor.constraint(equalTo: statusDot.centerYAnchor),
-            statusLabel.leadingAnchor.constraint(equalTo: statusDot.trailingAnchor, constant: 10),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor),
-
-            detailLabel.topAnchor.constraint(equalTo: statusDot.bottomAnchor, constant: 14),
-            detailLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            detailLabel.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-
-            buttonRow.topAnchor.constraint(equalTo: detailLabel.bottomAnchor, constant: 26),
-            buttonRow.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            buttonRow.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            buttonRow.heightAnchor.constraint(equalToConstant: 90),
-
-            hint.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            hint.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
+        configureStatusBadge(text: "准备中", color: .systemOrange)
+        updatePathLabels()
+        statusDot.setAccessibilityLabel("机器人状态指示")
 
         window.makeKeyAndOrderFront(nil)
+    }
+
+    private func makePanel() -> NSVisualEffectView {
+        let panel = NSVisualEffectView()
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        panel.material = .menu
+        panel.blendingMode = .withinWindow
+        panel.state = .active
+        panel.wantsLayer = true
+        panel.layer?.cornerRadius = 14
+        panel.layer?.cornerCurve = .continuous
+        panel.layer?.borderWidth = 1
+        panel.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.25).cgColor
+        return panel
+    }
+
+    private func configureStatusBadge(text: String, color: NSColor) {
+        statusBadge.stringValue = text
+        statusBadge.textColor = color
+        statusBadge.layer?.borderWidth = 1
+        statusBadge.layer?.borderColor = color.withAlphaComponent(0.35).cgColor
+        statusBadge.layer?.backgroundColor = color.withAlphaComponent(0.12).cgColor
+    }
+
+    private func updatePathLabels() {
+        let currentProject = readEnvValue(for: "CODEX_PROJECT_DIR")
+        if let currentProject, !currentProject.isEmpty {
+            projectPathLabel.stringValue = currentProject
+        } else {
+            projectPathLabel.stringValue = "未设置（默认使用 runtime 目录）"
+        }
+        envPathLabel.stringValue = envPath
+    }
+
+    private func readEnvValue(for key: String) -> String? {
+        guard let text = try? String(contentsOfFile: envPath, encoding: .utf8) else {
+            return nil
+        }
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                continue
+            }
+            guard let idx = trimmed.firstIndex(of: "=") else {
+                continue
+            }
+            let candidateKey = String(trimmed[..<idx]).trimmingCharacters(in: .whitespaces)
+            if candidateKey != key {
+                continue
+            }
+            var rawValue = String(trimmed[trimmed.index(after: idx)...]).trimmingCharacters(in: .whitespaces)
+            if rawValue.hasPrefix("\""), rawValue.hasSuffix("\""), rawValue.count >= 2 {
+                rawValue.removeFirst()
+                rawValue.removeLast()
+            } else if rawValue.hasPrefix("'"), rawValue.hasSuffix("'"), rawValue.count >= 2 {
+                rawValue.removeFirst()
+                rawValue.removeLast()
+            }
+            return rawValue
+        }
+        return nil
     }
 
     private func stylePrimaryButton(_ button: HoverButton) {
@@ -552,13 +723,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.imagePosition = .imageLeading
         button.imageHugsTitle = true
         button.contentTintColor = .labelColor
-        button.normalBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.45)
+        button.normalBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.58)
         button.hoverBackgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.18)
         button.pressedBackgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.28)
         button.normalBorderColor = NSColor.separatorColor.withAlphaComponent(0.35)
         button.hoverBorderColor = NSColor.controlAccentColor.withAlphaComponent(0.45)
         button.pressedBorderColor = NSColor.controlAccentColor.withAlphaComponent(0.6)
         button.normalTextColor = .labelColor
+    }
+
+    private func setControlButtonsEnabled(_ isEnabled: Bool) {
+        primaryButton.isEnabled = isEnabled
+        refreshButton.isEnabled = isEnabled
     }
 
     @objc private func primaryTapped() {
@@ -573,33 +749,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startTapped() {
-        primaryButton.isEnabled = false
+        setControlButtonsEnabled(false)
         setPendingUI("启动中...")
         DispatchQueue.global(qos: .userInitiated).async {
             let out = self.startBotCommand()
             DispatchQueue.main.async {
                 self.refreshStatus(message: out)
                 self.shouldKeepBotRunning = self.isBotRunning()
-                self.primaryButton.isEnabled = true
+                self.setControlButtonsEnabled(true)
             }
         }
     }
 
     private func stopTapped() {
-        primaryButton.isEnabled = false
+        setControlButtonsEnabled(false)
         setPendingUI("停止中...")
         DispatchQueue.global(qos: .userInitiated).async {
             let out = self.stopBotCommand()
             DispatchQueue.main.async {
                 self.refreshStatus(message: out)
                 self.shouldKeepBotRunning = false
-                self.primaryButton.isEnabled = true
+                self.setControlButtonsEnabled(true)
             }
         }
     }
 
     @objc private func refreshMenuTapped() {
-        refreshStatus()
+        refreshButton.isEnabled = false
+        setPendingUI("刷新状态...")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let running = self.isBotRunning()
+            DispatchQueue.main.async {
+                let summary = running ? "状态已刷新：运行中" : "状态已刷新：已停止"
+                self.refreshStatus(runningOverride: running, message: summary)
+                self.refreshButton.isEnabled = true
+            }
+        }
     }
 
     @objc private func openLogTapped() {
@@ -629,6 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
         }
+        updatePathLabels()
         NSWorkspace.shared.open(URL(fileURLWithPath: envPath))
     }
 
@@ -657,11 +843,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             scrollView.autoresizingMask = [.width, .height]
             scrollView.hasVerticalScroller = true
             scrollView.hasHorizontalScroller = true
+            scrollView.borderType = .noBorder
 
             let textView = NSTextView(frame: scrollView.bounds)
             textView.isEditable = false
-            textView.isRichText = false
+            textView.isRichText = true
             textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            textView.usesAdaptiveColorMappingForDarkAppearance = true
+            textView.drawsBackground = true
+            textView.backgroundColor = NSColor.textBackgroundColor
+            textView.insertionPointColor = NSColor.clear
+            textView.textContainerInset = NSSize(width: 12, height: 10)
             scrollView.documentView = textView
 
             win.contentView?.addSubview(scrollView)
@@ -711,27 +903,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wasNearBottom = true
         }
 
-        textView.string = logText
+        let attributedLog = buildLogAttributedText(logText)
+        if let textStorage = textView.textStorage {
+            textStorage.setAttributedString(attributedLog)
+        } else {
+            textView.string = logText
+        }
         if wasNearBottom {
             textView.scrollToEndOfDocument(nil)
         }
     }
 
+    private func buildLogAttributedText(_ logText: String) -> NSAttributedString {
+        let lines = logText.components(separatedBy: .newlines)
+        let attributed = NSMutableAttributedString()
+        for (idx, line) in lines.enumerated() {
+            let attrs = logLineAttributes(for: line)
+            attributed.append(NSAttributedString(string: line, attributes: attrs))
+            if idx < lines.count - 1 {
+                attributed.append(NSAttributedString(string: "\n", attributes: attrs))
+            }
+        }
+        return attributed
+    }
+
+    private func logLineAttributes(for line: String) -> [NSAttributedString.Key: Any] {
+        let lowered = line.lowercased()
+        let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        var color = NSColor.textColor
+        if lowered.contains("error") || lowered.contains("traceback") || lowered.contains("exception") || lowered.contains("failed") {
+            color = .systemRed
+        } else if lowered.contains("warn") {
+            color = .systemOrange
+        } else if lowered.contains("started") || lowered.contains("running") || lowered.contains("ready") || lowered.contains("success") {
+            color = .systemGreen
+        } else if lowered.contains("stop") || lowered.contains("stopped") {
+            color = NSColor.systemPink.blended(withFraction: 0.25, of: .labelColor) ?? .systemPink
+        }
+        return [
+            .font: baseFont,
+            .foregroundColor: color,
+        ]
+    }
+
     private func setPendingUI(_ text: String) {
         statusDot.setColor(.systemOrange)
         statusLabel.stringValue = "状态：\(text)"
+        configureStatusBadge(text: "处理中", color: .systemOrange)
+        detailLabel.stringValue = text
+        updatePathLabels()
     }
 
-    private func refreshStatus(message: String? = nil) {
-        let running = isBotRunning()
+    private func refreshStatus(runningOverride: Bool? = nil, message: String? = nil) {
+        let running = runningOverride ?? isBotRunning()
         if running {
             statusDot.setColor(.systemGreen)
             statusLabel.stringValue = "状态：运行中"
             primaryButton.title = "停止"
+            configureStatusBadge(text: "运行中", color: .systemGreen)
         } else {
             statusDot.setColor(.systemRed)
             statusLabel.stringValue = "状态：已停止"
             primaryButton.title = "启动"
+            configureStatusBadge(text: "已停止", color: .systemRed)
         }
 
         if let message, !message.isEmpty {
@@ -739,6 +973,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             detailLabel.stringValue = "运行环境：App 内置"
         }
+        updatePathLabels()
     }
 
     private func extractEnvKey(from line: String, includeCommented: Bool) -> String? {
