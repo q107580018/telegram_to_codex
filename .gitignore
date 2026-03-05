@@ -31,3 +31,6 @@ CodexBridge.app/
 
 # Local git worktrees
 .worktrees/
+
+# Local Codex runtime artifacts
+.codex/
