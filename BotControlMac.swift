@@ -179,7 +179,7 @@ final class HoverButton: NSButton {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let appName = "BotControl"
     private var didPromptFullDiskAccess = false
     private var didPromptCodexInstall = false
@@ -187,11 +187,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wasRunningBeforeSleep = false
     private var isWakeRecoveryInProgress = false
     private var workspaceObservers: [Any] = []
+    private let defaultWindowSize = NSSize(width: 720, height: 420)
+    private let minimumWindowSize = NSSize(width: 620, height: 360)
 
     private var window: NSWindow!
     private var logWindow: NSWindow?
     private var logRefreshTimer: Timer?
     private var autoStatusTimer: Timer?
+    private var statusItem: NSStatusItem?
+    private let statusSummaryMenuItem = NSMenuItem(title: "状态：准备中...", action: nil, keyEquivalent: "")
+    private var toggleWindowMenuItem: NSMenuItem?
+    private var toggleBotMenuItem: NSMenuItem?
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
@@ -237,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         setupMainMenu()
+        setupStatusItem()
         buildUI()
         setupPowerStateObservers()
         setPendingUI("初始化中...")
@@ -391,7 +398,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            showMainWindow()
+        }
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -459,7 +473,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildUI() {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1024, height: 560),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: defaultWindowSize.width,
+                height: defaultWindowSize.height
+            ),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -469,9 +488,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor.windowBackgroundColor
-        window.minSize = NSSize(width: 900, height: 500)
+        window.minSize = minimumWindowSize
         window.center()
         window.isReleasedWhenClosed = false
+        window.delegate = self
 
         let background = NSVisualEffectView(frame: window.contentView!.bounds)
         background.autoresizingMask = [.width, .height]
@@ -647,7 +667,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rootStack.addArrangedSubview(actionPanel)
         actionPanel.widthAnchor.constraint(equalTo: rootStack.widthAnchor, constant: -48).isActive = true
 
-        let footer = NSTextField(labelWithString: "提示：关闭窗口会自动停止 bot，唤醒后若之前在运行会自动恢复。")
+        let footer = NSTextField(labelWithString: "提示：关闭窗口会隐藏到菜单栏；退出应用才会停止 bot。唤醒后若之前在运行会自动恢复。")
         footer.font = NSFont.systemFont(ofSize: 12, weight: .regular)
         footer.textColor = .secondaryLabelColor
         footer.lineBreakMode = .byTruncatingTail
@@ -657,6 +677,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusDot.setAccessibilityLabel("机器人状态指示")
 
         window.makeKeyAndOrderFront(nil)
+        refreshStatusMenuItems()
+    }
+
+    private func setupStatusItem() {
+        let newStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = newStatusItem.button {
+            if let icon = NSImage(systemSymbolName: "paperplane.circle.fill", accessibilityDescription: appName) {
+                icon.isTemplate = true
+                button.image = icon
+            } else {
+                button.title = "BC"
+            }
+            button.toolTip = "BotControl 菜单"
+        }
+
+        let menu = NSMenu()
+        statusSummaryMenuItem.isEnabled = false
+        menu.addItem(statusSummaryMenuItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let windowItem = NSMenuItem(title: "隐藏主窗口", action: #selector(toggleMainWindowFromMenuBar), keyEquivalent: "")
+        windowItem.target = self
+        menu.addItem(windowItem)
+        toggleWindowMenuItem = windowItem
+
+        let botItem = NSMenuItem(title: "启动机器人", action: #selector(toggleBotFromMenuBar), keyEquivalent: "")
+        botItem.target = self
+        menu.addItem(botItem)
+        toggleBotMenuItem = botItem
+
+        let refreshItem = NSMenuItem(title: "刷新状态", action: #selector(refreshFromMenuBar), keyEquivalent: "")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let logItem = NSMenuItem(title: "查看日志", action: #selector(openLogTapped), keyEquivalent: "")
+        logItem.target = self
+        menu.addItem(logItem)
+
+        let configItem = NSMenuItem(title: "打开配置", action: #selector(openConfigTapped), keyEquivalent: "")
+        configItem.target = self
+        menu.addItem(configItem)
+        menu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(
+            title: "退出 \(appName)",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: ""
+        )
+        quitItem.target = NSApp
+        menu.addItem(quitItem)
+
+        newStatusItem.menu = menu
+        statusItem = newStatusItem
+        refreshStatusMenuItems()
+    }
+
+    private var isMainWindowVisible: Bool {
+        guard window != nil else {
+            return false
+        }
+        return window.isVisible && !window.isMiniaturized
+    }
+
+    private func showMainWindow() {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        refreshStatusMenuItems()
+    }
+
+    private func hideMainWindowToMenuBar() {
+        window.orderOut(nil)
+        refreshStatusMenuItems()
+    }
+
+    private func refreshStatusMenuItems(
+        statusTextOverride: String? = nil,
+        runningOverride: Bool? = nil
+    ) {
+        let running = runningOverride ?? isBotRunning()
+        if let statusTextOverride, !statusTextOverride.isEmpty {
+            statusSummaryMenuItem.title = "状态：\(statusTextOverride)"
+        } else {
+            statusSummaryMenuItem.title = running ? "状态：运行中" : "状态：已停止"
+        }
+        toggleBotMenuItem?.title = running ? "停止机器人" : "启动机器人"
+        toggleWindowMenuItem?.title = isMainWindowVisible ? "隐藏主窗口" : "显示主窗口"
+    }
+
+    @objc private func toggleMainWindowFromMenuBar() {
+        if isMainWindowVisible {
+            hideMainWindowToMenuBar()
+        } else {
+            showMainWindow()
+        }
+    }
+
+    @objc private func toggleBotFromMenuBar() {
+        if isWakeRecoveryInProgress || !primaryButton.isEnabled {
+            return
+        }
+        if isBotRunning() {
+            stopTapped()
+        } else {
+            startTapped()
+        }
+    }
+
+    @objc private func refreshFromMenuBar() {
+        if isWakeRecoveryInProgress || !primaryButton.isEnabled {
+            return
+        }
+        refreshStatus()
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender == window else {
+            return true
+        }
+        hideMainWindowToMenuBar()
+        return false
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        refreshStatusMenuItems()
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        refreshStatusMenuItems()
     }
 
     private func makePanel() -> NSVisualEffectView {
@@ -962,6 +1114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusLabel.stringValue = "状态：\(text)"
         detailLabel.stringValue = text
         updatePathLabels()
+        refreshStatusMenuItems(statusTextOverride: text)
     }
 
     private func refreshStatus(runningOverride: Bool? = nil, message: String? = nil) {
@@ -982,6 +1135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             detailLabel.stringValue = "运行环境：App 内置"
         }
         updatePathLabels()
+        refreshStatusMenuItems(runningOverride: running)
     }
 
     private func messageForStartCommandOutput(_ rawOutput: String) -> String {
