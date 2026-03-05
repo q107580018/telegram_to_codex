@@ -80,7 +80,7 @@ def load_config() -> AppConfig:
 
     codex_bin_raw = os.getenv("CODEX_BIN", "codex").strip()
     codex_project_dir = os.path.expanduser(
-        os.getenv("CODEX_PROJECT_DIR", "~/Documents/BotControlWorkspace").strip()
+        os.getenv("CODEX_PROJECT_DIR", "~/Documents/CodexBridgeWorkspace").strip()
     )
     os.makedirs(codex_project_dir, exist_ok=True)
 

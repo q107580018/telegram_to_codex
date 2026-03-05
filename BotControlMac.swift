@@ -180,7 +180,7 @@ final class HoverButton: NSButton {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let appName = "BotControl"
+    private let appName = "CodexBridge"
     private var didPromptFullDiskAccess = false
     private var didPromptCodexInstall = false
     private var shouldKeepBotRunning = false
@@ -210,6 +210,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var runtimeDir: String {
         let support = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first!
         return support + "/" + appName + "/runtime"
+    }
+    private var legacyRuntimeDir: String {
+        let support = NSSearchPathForDirectoriesInDomains(.applicationSupportDirectory, .userDomainMask, true).first!
+        return support + "/BotControl/runtime"
     }
 
     private var pythonPath: String { runtimeDir + "/.venv/bin/python" }
@@ -327,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "未检测到 codex 命令"
-        alert.informativeText = "当前设备未找到可执行的 codex，机器人无法启动。\n请先安装：brew install --cask codex\n安装后重启 BotControl。"
+        alert.informativeText = "当前设备未找到可执行的 codex，机器人无法启动。\n请先安装：brew install --cask codex\n安装后重启 CodexBridge。"
         alert.addButton(withTitle: "前往安装文档")
         alert.addButton(withTitle: "稍后再说")
         alert.addButton(withTitle: "退出")
@@ -483,7 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "BotControl"
+        window.title = "CodexBridge"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
@@ -689,7 +693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else {
                 button.title = "BC"
             }
-            button.toolTip = "BotControl 菜单"
+            button.toolTip = "CodexBridge 菜单"
         }
 
         let menu = NSMenu()
@@ -1377,6 +1381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func bootstrapRuntime() -> String {
         let fm = FileManager.default
+        migrateLegacyRuntimeIfNeeded()
         do {
             try fm.createDirectory(atPath: runtimeDir, withIntermediateDirectories: true)
         } catch {
@@ -1488,6 +1493,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return "运行环境已就绪（codex: \(codexPath)，已补全 \(addedCount) 个新配置项）"
         }
         return "运行环境已就绪（codex: \(codexPath)）"
+    }
+
+    private func migrateLegacyRuntimeIfNeeded() {
+        let fm = FileManager.default
+        guard legacyRuntimeDir != runtimeDir else {
+            return
+        }
+        guard fm.fileExists(atPath: legacyRuntimeDir), !fm.fileExists(atPath: runtimeDir) else {
+            return
+        }
+        let targetParent = (runtimeDir as NSString).deletingLastPathComponent
+        do {
+            try fm.createDirectory(atPath: targetParent, withIntermediateDirectories: true)
+            try fm.moveItem(atPath: legacyRuntimeDir, toPath: runtimeDir)
+        } catch {
+            // Ignore migration errors and continue with fresh runtime setup.
+        }
     }
 
     private func ensureRuntimeLogFiles() {

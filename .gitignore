@@ -27,6 +27,7 @@ AGENTS.md
 
 # Local app build artifact
 BotControl.app/
+CodexBridge.app/
 
 # Local git worktrees
 .worktrees/

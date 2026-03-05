@@ -26,7 +26,7 @@ on showStatus()
 	if isBotRunning() then set statusText to "Running"
 	
 	if statusText is "Running" then set statusText to "运行中"
-	set msg to "Telegram Bot 控制器" & return & return & "项目路径: " & projectPath & return & "当前状态: " & statusText
+	set msg to "CodexBridge 控制器" & return & return & "项目路径: " & projectPath & return & "当前状态: " & statusText
 	
 	try
 		set choice to button returned of (display dialog msg buttons {"退出并停止", "操作", "启动"} default button "启动")
