@@ -14,7 +14,15 @@ from config import AppConfig
 from polling_health import PollingHealthManager
 from project_service import ProjectService
 from skills import list_available_skills
-from telegram_io import keep_typing, reply_text_with_retry, send_message_with_retry
+from telegram_io import (
+    extract_image_sources,
+    keep_typing,
+    remove_markdown_images,
+    send_document_with_retry,
+    reply_text_with_retry,
+    send_message_with_retry,
+    send_photo_with_retry,
+)
 
 
 class BotHandlers:
@@ -422,6 +430,18 @@ class BotHandlers:
         try:
             prompt = build_prompt(self.system_prompt, history)
             reply_text, meta = await self.ask_codex_with_retry(prompt)
+            local_image_paths, remote_image_urls, had_image_markdown = extract_image_sources(
+                reply_text, base_dir=self.project_service.project_dir
+            )
+            self.logger.info(
+                "[chat:%s user:%s] IMAGE_PARSE: markdown=%s local=%s remote=%s",
+                chat_id,
+                user_id,
+                had_image_markdown,
+                len(local_image_paths),
+                len(remote_image_urls),
+            )
+            reply_text_for_telegram = remove_markdown_images(reply_text)
             usage = (meta or {}).get("usage") if isinstance(meta, dict) else {}
             self.chat_store.update_usage_stats(
                 chat_id, usage if isinstance(usage, dict) else {}
@@ -433,8 +453,52 @@ class BotHandlers:
             )
 
             chunk_size = 3900
-            for i in range(0, len(reply_text), chunk_size):
-                await reply_text_with_retry(update, reply_text[i : i + chunk_size])
+            for i in range(0, len(reply_text_for_telegram), chunk_size):
+                await reply_text_with_retry(
+                    update, reply_text_for_telegram[i : i + chunk_size]
+                )
+            for image_path in local_image_paths:
+                sent, photo_err = await send_photo_with_retry(update, image_path)
+                if not sent:
+                    self.logger.warning(
+                        "[chat:%s user:%s] LOCAL_IMAGE_PHOTO_FAILED path=%s err=%s",
+                        chat_id,
+                        user_id,
+                        image_path,
+                        photo_err or "unknown",
+                    )
+                    sent_as_doc, doc_err = await send_document_with_retry(update, image_path)
+                    if not sent_as_doc:
+                        self.logger.warning(
+                            "[chat:%s user:%s] LOCAL_IMAGE_DOCUMENT_FAILED path=%s err=%s",
+                            chat_id,
+                            user_id,
+                            image_path,
+                            doc_err or "unknown",
+                        )
+                        await reply_text_with_retry(
+                            update,
+                            f"图片发送失败：{image_path}\nphoto_err={photo_err or 'unknown'}\ndoc_err={doc_err or 'unknown'}",
+                        )
+            for image_url in remote_image_urls:
+                sent, photo_err = await send_photo_with_retry(update, image_url)
+                if not sent:
+                    self.logger.warning(
+                        "[chat:%s user:%s] REMOTE_IMAGE_FAILED url=%s err=%s",
+                        chat_id,
+                        user_id,
+                        image_url,
+                        photo_err or "unknown",
+                    )
+                    await reply_text_with_retry(
+                        update, f"图片发送失败：{image_url}\nerr={photo_err or 'unknown'}"
+                    )
+            all_sources = local_image_paths + remote_image_urls
+            if had_image_markdown and not all_sources:
+                await reply_text_with_retry(
+                    update,
+                    "检测到图片标记，但未找到可发送图片。请使用可访问的 http/https 链接或本机存在的绝对路径。",
+                )
             if status_msg:
                 try:
                     await status_msg.delete()

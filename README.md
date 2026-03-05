@@ -73,4 +73,5 @@ cp .env.example .env
 - 上下文默认保留最近 12 轮对话（可用 `CHAT_MAX_TURNS` 调整），并自动落盘到 `chat_histories.json`（重启后可恢复）。
 - 可通过 `.env` 的 `ALLOWED_USER_IDS` 限制可用用户（逗号分隔 Telegram user_id）。
 - 日志默认写入 `bot.log` 并自动轮转，避免文件无限增长（可通过 `BOT_LOG_*` 参数调整）。
+- 当 Codex 回复里包含 Markdown 图片（例如 `![截图](/绝对路径/demo.png)`）时，bot 会自动读取本地文件并以 Telegram 图片消息发送；同一张图在单条回复内会自动去重。
 - 不需要 `OPENAI_API_KEY`，依赖本机 `codex` 命令的登录态。
