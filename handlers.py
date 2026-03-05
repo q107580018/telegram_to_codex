@@ -433,18 +433,23 @@ class BotHandlers:
             self.wake_watchdog_task = asyncio.create_task(
                 self.wake_watchdog(app), name="wake_watchdog"
             )
-        await app.bot.set_my_commands(
-            [
-                BotCommand("new", "新建对话（清空上下文）"),
-                BotCommand("skills", "查看可用 skills"),
-                BotCommand("status", "查看 Codex 状态"),
-                BotCommand("setproject", "切换 Codex 项目目录"),
-                BotCommand("setreasoning", "设置推理等级"),
-                BotCommand("getproject", "查看当前项目目录与 .env"),
-                BotCommand("history", "查看当前会话历史信息"),
-                BotCommand("start", "显示帮助"),
-            ]
-        )
+        try:
+            await app.bot.set_my_commands(
+                [
+                    BotCommand("new", "新建对话（清空上下文）"),
+                    BotCommand("skills", "查看可用 skills"),
+                    BotCommand("status", "查看 Codex 状态"),
+                    BotCommand("setproject", "切换 Codex 项目目录"),
+                    BotCommand("setreasoning", "设置推理等级"),
+                    BotCommand("getproject", "查看当前项目目录与 .env"),
+                    BotCommand("history", "查看当前会话历史信息"),
+                    BotCommand("start", "显示帮助"),
+                ]
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "设置 Telegram 命令菜单失败（将继续运行，稍后可重试）：%s", exc
+            )
 
     async def post_shutdown(self, app) -> None:
         task = self.wake_watchdog_task

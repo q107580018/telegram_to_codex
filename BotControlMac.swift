@@ -250,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setupStatusItem()
         buildUI()
         setupPowerStateObservers()
+        setControlButtonsEnabled(false)
         setPendingUI("初始化中...")
         promptForFullDiskAccessIfNeeded()
 
@@ -257,9 +258,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let result = self.bootstrapRuntime()
             DispatchQueue.main.async {
                 self.refreshStatus(message: result)
-                if result.hasPrefix("初始化失败：未检测到 codex 命令") {
+                let missingCodex = result.hasPrefix("初始化失败：未检测到 codex 命令")
+                if missingCodex {
                     self.primaryButton.isEnabled = false
                     self.promptForCodexInstallIfNeeded()
+                } else {
+                    self.setControlButtonsEnabled(true)
                 }
                 self.shouldKeepBotRunning = self.isBotRunning()
             }
@@ -1144,6 +1148,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func messageForStartCommandOutput(_ rawOutput: String) -> String {
         let output = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if output.hasPrefix("failed:") {
+            let reasonRaw = String(output.dropFirst("failed:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if reasonRaw.isEmpty {
+                return "启动失败：\(friendlyStartFailureReason())"
+            }
+            return "启动失败：\(mapTechnicalStartErrorToFriendly(reasonRaw))"
+        }
         if output == "failed" {
             return "启动失败：\(friendlyStartFailureReason())"
         }
@@ -1188,6 +1200,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             && lowered.contains("nonetype")
         {
             return "当前 Python 版本过低（不兼容类型注解语法），请升级到 Python 3.10+。"
+        }
+        if lowered.contains("no running event loop") {
+            return "初始化网络轮询时发生事件循环异常，常见于代理/网络瞬断；请重试并检查 TELEGRAM_PROXY_URL。"
         }
         return raw
     }
@@ -1557,7 +1572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func startBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) > \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
+        let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 2; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 1 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 1 \(q(logPath)) 2>/dev/null | tr -d '\\r' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

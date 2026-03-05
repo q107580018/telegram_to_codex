@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from telegram.error import TimedOut
+from telegram.error import NetworkError, TimedOut
 
 from chat_store import ChatStore
 from config import AppConfig
@@ -80,7 +80,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             error = TimedOut("timeout")
             application = object()
 
-        def consume_task(coro):
+        def consume_task(coro, **_kwargs):
             coro.close()
             return None
 
@@ -170,6 +170,23 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         handlers.request_process_escalation("test")
 
         self.assertEqual(handlers.escalate_exit_code_requested, 75)
+
+    async def test_post_init_tolerates_set_my_commands_network_error(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        class App:
+            bot = AsyncMock()
+
+        app = App()
+        app.bot.set_my_commands = AsyncMock(side_effect=NetworkError("proxy down"))
+
+        def consume_task(coro, **_kwargs):
+            coro.close()
+            return None
+
+        with patch("handlers.asyncio.create_task", side_effect=consume_task):
+            await handlers.post_init(app)
 
 
 if __name__ == "__main__":
