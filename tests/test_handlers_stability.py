@@ -100,9 +100,9 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             usage={},
         )
 
-        self.assertIn("Polling Health:", text)
-        self.assertIn("state=degraded", text)
-        self.assertIn("consecutive_errors=2", text)
+        self.assertIn("轮询健康：", text)
+        self.assertIn("状态=degraded", text)
+        self.assertIn("连续网络错误=2", text)
 
     async def test_status_includes_reasoning_effort(self):
         handlers, tmp = build_handlers_for_test()
@@ -121,10 +121,38 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             effective_reasoning_effort="high",
         )
 
-        self.assertIn("Reasoning Effort:", text)
-        self.assertIn("Default: medium", text)
-        self.assertIn("Override: high", text)
-        self.assertIn("Effective: high", text)
+        self.assertIn("推理等级：", text)
+        self.assertIn("默认：medium", text)
+        self.assertIn("会话覆盖：high", text)
+        self.assertIn("当前生效：high", text)
+
+    async def test_status_includes_account_quota(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        text = handlers.render_status_text(
+            runtime_info={
+                "login": "ok",
+                "model": "default",
+                "version": "1.0.0",
+                "reasoning_effort": "medium",
+                "quota": {
+                    "primary_used_percent": 21.0,
+                    "primary_remaining_percent": 79.0,
+                    "primary_window_minutes": 300,
+                    "secondary_used_percent": 37.0,
+                    "secondary_remaining_percent": 63.0,
+                    "secondary_window_minutes": 10080,
+                },
+            },
+            usage={},
+        )
+
+        self.assertIn("账号额度快照：", text)
+        self.assertIn("主窗口(300m)：已用=21.0%", text)
+        self.assertIn("周窗口(10080m)：已用=37.0%", text)
+        self.assertNotIn("Context Left", text)
+        self.assertNotIn("credits", text.lower())
 
     async def test_setreasoning_updates_override(self):
         handlers, tmp = build_handlers_for_test()

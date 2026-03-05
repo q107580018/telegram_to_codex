@@ -1,6 +1,8 @@
 import json
 import os
 import subprocess
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from config import AppConfig, normalize_reasoning_effort
@@ -141,9 +143,131 @@ def get_codex_runtime_info(config: AppConfig) -> dict:
 
     version_code, version_out = run_cmd([config.codex_bin, "--version"], timeout=8)
     login_code, login_out = run_cmd([config.codex_bin, "login", "status"], timeout=12)
+    quota = get_latest_account_quota_snapshot()
     return {
         "version": version_out if version_code == 0 else "",
         "login": login_out if login_code == 0 else "",
         "model": config.codex_model or "default",
         "reasoning_effort": config.codex_reasoning_effort or "default",
+        "quota": quota,
+    }
+
+
+def _safe_float(value) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_codex_home() -> Path:
+    raw = (os.getenv("CODEX_HOME") or "~/.codex").strip()
+    return Path(os.path.expanduser(raw))
+
+
+def _find_latest_session_file(codex_home: Path) -> Optional[Path]:
+    sessions_dir = codex_home / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+    latest: Optional[Path] = None
+    latest_mtime = -1.0
+    for path in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > latest_mtime:
+            latest_mtime = mtime
+            latest = path
+    return latest
+
+
+def _format_reset_time(epoch: Optional[int]) -> str:
+    if epoch is None:
+        return ""
+    try:
+        return datetime.fromtimestamp(int(epoch)).astimezone().strftime(
+            "%Y-%m-%d %H:%M:%S %Z"
+        )
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _format_iso_utc_to_local(ts: str) -> str:
+    raw = (ts or "").strip()
+    if not raw:
+        return ""
+    try:
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        dt = datetime.fromisoformat(raw)
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    except (TypeError, ValueError):
+        return ""
+
+
+def get_latest_account_quota_snapshot() -> dict:
+    session_file = _find_latest_session_file(_resolve_codex_home())
+    if not session_file:
+        return {}
+
+    latest_rate_limits = None
+    latest_ts = ""
+    try:
+        with session_file.open("r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    evt = json.loads(line)
+                except Exception:
+                    continue
+                if evt.get("type") != "event_msg":
+                    continue
+                payload = evt.get("payload") or {}
+                if payload.get("type") != "token_count":
+                    continue
+                rate_limits = payload.get("rate_limits")
+                if isinstance(rate_limits, dict):
+                    latest_rate_limits = rate_limits
+                    latest_ts = str(evt.get("timestamp") or "")
+    except OSError:
+        return {}
+
+    if not latest_rate_limits:
+        return {}
+
+    primary = latest_rate_limits.get("primary") or {}
+    secondary = latest_rate_limits.get("secondary") or {}
+    credits = latest_rate_limits.get("credits") or {}
+
+    primary_used = _safe_float(primary.get("used_percent"))
+    secondary_used = _safe_float(secondary.get("used_percent"))
+    primary_window = primary.get("window_minutes")
+    secondary_window = secondary.get("window_minutes")
+    primary_reset = primary.get("resets_at")
+    secondary_reset = secondary.get("resets_at")
+
+    return {
+        "primary_used_percent": primary_used,
+        "primary_remaining_percent": None
+        if primary_used is None
+        else max(0.0, round(100.0 - primary_used, 1)),
+        "primary_window_minutes": primary_window,
+        "primary_resets_at": primary_reset,
+        "primary_resets_at_local": _format_reset_time(primary_reset),
+        "secondary_used_percent": secondary_used,
+        "secondary_remaining_percent": None
+        if secondary_used is None
+        else max(0.0, round(100.0 - secondary_used, 1)),
+        "secondary_window_minutes": secondary_window,
+        "secondary_resets_at": secondary_reset,
+        "secondary_resets_at_local": _format_reset_time(secondary_reset),
+        "credits_has_credits": credits.get("has_credits"),
+        "credits_unlimited": credits.get("unlimited"),
+        "credits_balance": credits.get("balance"),
+        "source_file": str(session_file),
+        "source_timestamp": latest_ts,
+        "source_timestamp_local": _format_iso_utc_to_local(latest_ts),
     }

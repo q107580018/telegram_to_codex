@@ -266,30 +266,48 @@ class BotHandlers:
         effective_reasoning_effort: str = "",
     ) -> str:
         health = self.polling_health.snapshot(now=time.monotonic())
+        quota = runtime_info.get("quota") or {}
+        if quota:
+            account_quota_text = (
+                "账号额度快照：\n"
+                f"- 主窗口({quota.get('primary_window_minutes')}m)："
+                f"已用={quota.get('primary_used_percent')}%，"
+                f"剩余={quota.get('primary_remaining_percent')}%，"
+                f"重置={quota.get('primary_resets_at_local') or quota.get('primary_resets_at')}\n"
+                f"- 周窗口({quota.get('secondary_window_minutes')}m)："
+                f"已用={quota.get('secondary_used_percent')}%，"
+                f"剩余={quota.get('secondary_remaining_percent')}%，"
+                f"重置={quota.get('secondary_resets_at_local') or quota.get('secondary_resets_at')}\n"
+                f"- 快照时间：{quota.get('source_timestamp_local') or quota.get('source_timestamp') or 'unknown'}"
+            )
+        else:
+            account_quota_text = (
+                "账号额度快照：\n"
+                "- 未找到可用额度快照（尚无会话文件或会话未产出 token_count）"
+            )
         return (
             "当前会话状态：\n"
-            "Token Usage:\n"
-            f"- Last: in={usage.get('last_input_tokens', 0)}, "
-            f"cached={usage.get('last_cached_input_tokens', 0)}, "
-            f"out={usage.get('last_output_tokens', 0)}\n"
-            f"- Total: in={usage.get('total_input_tokens', 0)}, "
-            f"cached={usage.get('total_cached_input_tokens', 0)}, "
-            f"out={usage.get('total_output_tokens', 0)}\n"
-            "Context Left:\n"
-            "- 当前 codex exec --json 未暴露 context left 百分比\n"
-            "Plan/Model:\n"
-            f"- Plan: {runtime_info.get('login') or 'unknown'}\n"
-            f"- Model: {runtime_info.get('model')}\n"
-            f"- CLI: {runtime_info.get('version') or 'unknown'}\n"
-            "Reasoning Effort:\n"
-            f"- Default: {runtime_info.get('reasoning_effort') or 'default'}\n"
-            f"- Override: {reasoning_override or '(none)'}\n"
-            f"- Effective: {effective_reasoning_effort or 'default'}\n"
-            "Polling Health:\n"
-            f"- state={health.get('state')}\n"
-            f"- consecutive_errors={health.get('consecutive_network_errors', 0)}\n"
-            f"- restarts_in_window={health.get('restarts_in_window', 0)}\n"
-            f"- last_event={health.get('last_event') or 'none'}"
+            "令牌用量：\n"
+            f"- 最近一次：输入={usage.get('last_input_tokens', 0)}，"
+            f"缓存={usage.get('last_cached_input_tokens', 0)}，"
+            f"输出={usage.get('last_output_tokens', 0)}\n"
+            f"- 累计：输入={usage.get('total_input_tokens', 0)}，"
+            f"缓存={usage.get('total_cached_input_tokens', 0)}，"
+            f"输出={usage.get('total_output_tokens', 0)}\n"
+            "计划与模型：\n"
+            f"- 账号状态：{runtime_info.get('login') or 'unknown'}\n"
+            f"- 模型：{runtime_info.get('model')}\n"
+            f"- CLI 版本：{runtime_info.get('version') or 'unknown'}\n"
+            "推理等级：\n"
+            f"- 默认：{runtime_info.get('reasoning_effort') or 'default'}\n"
+            f"- 会话覆盖：{reasoning_override or '(none)'}\n"
+            f"- 当前生效：{effective_reasoning_effort or 'default'}\n"
+            f"{account_quota_text}\n"
+            "轮询健康：\n"
+            f"- 状态={health.get('state')}\n"
+            f"- 连续网络错误={health.get('consecutive_network_errors', 0)}\n"
+            f"- 窗口内重启次数={health.get('restarts_in_window', 0)}\n"
+            f"- 最近事件={health.get('last_event') or 'none'}"
         )
 
     async def setreasoning(

@@ -62,7 +62,7 @@ cp .env.example .env
 
 - `/start` 开始
 - `/new` 新建对话（清空上下文）
-- `/status` 查看 Codex 状态与轮询健康摘要
+- `/status` 查看 Codex 状态、账号额度快照与轮询健康摘要
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
 - `/setreasoning <low|medium|high|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
