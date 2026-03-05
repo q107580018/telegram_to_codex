@@ -10,7 +10,7 @@ from telegram.ext import ContextTypes
 
 from chat_store import ChatStore
 from codex_client import ask_codex_with_meta, build_prompt, get_codex_runtime_info
-from config import AppConfig
+from config import AppConfig, normalize_reasoning_effort
 from polling_health import PollingHealthManager
 from project_service import ProjectService
 from skills import list_available_skills
@@ -60,6 +60,7 @@ class BotHandlers:
         self.system_prompt = system_prompt
         self.polling_escalate_exit_code = polling_escalate_exit_code
         self.escalate_exit_code_requested: Optional[int] = None
+        self.chat_reasoning_overrides: dict[int, str] = {}
 
         self.polling_health = PollingHealthManager(
             restart_threshold=polling_restart_threshold,
@@ -157,12 +158,17 @@ class BotHandlers:
             self.logger.info("wake_watchdog 已停止。")
             raise
 
-    async def ask_codex_with_retry(self, prompt: str) -> tuple[str, dict]:
+    async def ask_codex_with_retry(
+        self, prompt: str, reasoning_effort: Optional[str] = None
+    ) -> tuple[str, dict]:
         last_exc: Optional[Exception] = None
         for attempt in range(self.codex_max_retries):
             try:
                 return await asyncio.to_thread(
-                    ask_codex_with_meta, self.runtime_config(), prompt
+                    ask_codex_with_meta,
+                    self.runtime_config(),
+                    prompt,
+                    reasoning_effort,
                 )
             except Exception as exc:
                 last_exc = exc
@@ -180,7 +186,7 @@ class BotHandlers:
             update,
             "已连接 Codex。直接发消息即可对话。\n"
             "命令：/new 新对话，/skills 查看可用技能，/status 查看 Codex 状态，"
-            "/setproject 切换目录，/getproject 查看目录，/history 查看历史",
+            "/setproject 切换目录，/setreasoning 设置推理等级，/getproject 查看目录，/history 查看历史",
         )
 
     async def new_chat(
@@ -194,6 +200,7 @@ class BotHandlers:
         if chat_id is None:
             return
         self.chat_store.reset_chat(chat_id)
+        self.chat_reasoning_overrides.pop(chat_id, None)
         await reply_text_with_retry(update, "已新建对话并清空上下文。")
 
     async def skills(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -234,12 +241,30 @@ class BotHandlers:
             return
 
         usage = self.chat_store.usage_stats.get(chat_id) or {}
-        reply = self.render_status_text(runtime_info=runtime_info, usage=usage)
+        default_effort = normalize_reasoning_effort(
+            runtime_info.get("reasoning_effort", "")
+        )
+        reasoning_override = normalize_reasoning_effort(
+            self.chat_reasoning_overrides.get(chat_id, "")
+        )
+        effective_effort = reasoning_override or default_effort
+        reply = self.render_status_text(
+            runtime_info=runtime_info,
+            usage=usage,
+            reasoning_override=reasoning_override,
+            effective_reasoning_effort=effective_effort,
+        )
 
         await reply_text_with_retry(update, reply)
         self.chat_store.append_command_history(chat_id, "/status", reply)
 
-    def render_status_text(self, runtime_info: dict, usage: dict) -> str:
+    def render_status_text(
+        self,
+        runtime_info: dict,
+        usage: dict,
+        reasoning_override: str = "",
+        effective_reasoning_effort: str = "",
+    ) -> str:
         health = self.polling_health.snapshot(now=time.monotonic())
         return (
             "当前会话状态：\n"
@@ -256,12 +281,59 @@ class BotHandlers:
             f"- Plan: {runtime_info.get('login') or 'unknown'}\n"
             f"- Model: {runtime_info.get('model')}\n"
             f"- CLI: {runtime_info.get('version') or 'unknown'}\n"
+            "Reasoning Effort:\n"
+            f"- Default: {runtime_info.get('reasoning_effort') or 'default'}\n"
+            f"- Override: {reasoning_override or '(none)'}\n"
+            f"- Effective: {effective_reasoning_effort or 'default'}\n"
             "Polling Health:\n"
             f"- state={health.get('state')}\n"
             f"- consecutive_errors={health.get('consecutive_network_errors', 0)}\n"
             f"- restarts_in_window={health.get('restarts_in_window', 0)}\n"
             f"- last_event={health.get('last_event') or 'none'}"
         )
+
+    async def setreasoning(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        self.mark_polling_healthy()
+        if not self.is_allowed(update):
+            await reply_text_with_retry(update, "你没有权限使用这个 bot。")
+            return
+        chat_id = self.get_chat_id(update)
+        if chat_id is None:
+            return
+        if not context.args:
+            current = self.chat_reasoning_overrides.get(chat_id)
+            default = self.config.codex_reasoning_effort or "default"
+            reply = (
+                "用法：/setreasoning <low|medium|high|default>\n"
+                f"当前会话覆盖：{current or '(none)'}\n"
+                f"全局默认：{default}"
+            )
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, "/setreasoning", reply)
+            return
+
+        value = (context.args[0] or "").strip().lower()
+        command = f"/setreasoning {' '.join(context.args)}"
+        if value == "default":
+            self.chat_reasoning_overrides.pop(chat_id, None)
+            reply = "已清除会话推理等级覆盖，恢复使用默认（default）配置。"
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        normalized = normalize_reasoning_effort(value)
+        if not normalized:
+            reply = "无效推理等级。可选：low、medium、high、default。"
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        self.chat_reasoning_overrides[chat_id] = normalized
+        reply = f"已设置当前会话推理等级：{normalized}"
+        await reply_text_with_retry(update, reply)
+        self.chat_store.append_command_history(chat_id, command, reply)
 
     async def setproject(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -351,6 +423,7 @@ class BotHandlers:
                 BotCommand("skills", "查看可用 skills"),
                 BotCommand("status", "查看 Codex 状态"),
                 BotCommand("setproject", "切换 Codex 项目目录"),
+                BotCommand("setreasoning", "设置推理等级"),
                 BotCommand("getproject", "查看当前项目目录与 .env"),
                 BotCommand("history", "查看当前会话历史信息"),
                 BotCommand("start", "显示帮助"),
@@ -429,7 +502,10 @@ class BotHandlers:
 
         try:
             prompt = build_prompt(self.system_prompt, history)
-            reply_text, meta = await self.ask_codex_with_retry(prompt)
+            reasoning_effort = self.chat_reasoning_overrides.get(chat_id)
+            reply_text, meta = await self.ask_codex_with_retry(
+                prompt, reasoning_effort=reasoning_effort
+            )
             local_image_paths, remote_image_urls, had_image_markdown = extract_image_sources(
                 reply_text, base_dir=self.project_service.project_dir
             )

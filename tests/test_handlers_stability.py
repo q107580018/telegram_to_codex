@@ -25,6 +25,7 @@ def build_handlers_for_test(
         telegram_bot_token="token",
         telegram_proxy_url="",
         codex_model="",
+        codex_reasoning_effort="",
         codex_bin="codex",
         codex_project_dir=tmpdir.name,
         codex_timeout_sec=120,
@@ -57,6 +58,18 @@ def build_handlers_for_test(
 
 
 class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
+    class _Chat:
+        def __init__(self, chat_id: int):
+            self.id = chat_id
+
+    class _Update:
+        def __init__(self, chat_id: int):
+            self.effective_chat = HandlerStabilityTests._Chat(chat_id)
+
+    class _Context:
+        def __init__(self, args: list[str]):
+            self.args = args
+
     async def test_network_error_threshold_schedules_restart(self):
         handlers, tmp = build_handlers_for_test(restart_threshold=1)
         self.addCleanup(tmp.cleanup)
@@ -90,6 +103,55 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Polling Health:", text)
         self.assertIn("state=degraded", text)
         self.assertIn("consecutive_errors=2", text)
+
+    async def test_status_includes_reasoning_effort(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        handlers.chat_reasoning_overrides[123] = "high"
+        text = handlers.render_status_text(
+            runtime_info={
+                "login": "ok",
+                "model": "default",
+                "version": "1.0.0",
+                "reasoning_effort": "medium",
+            },
+            usage={},
+            reasoning_override="high",
+            effective_reasoning_effort="high",
+        )
+
+        self.assertIn("Reasoning Effort:", text)
+        self.assertIn("Default: medium", text)
+        self.assertIn("Override: high", text)
+        self.assertIn("Effective: high", text)
+
+    async def test_setreasoning_updates_override(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=["high"])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.setreasoning(update, context)
+
+        self.assertEqual(handlers.chat_reasoning_overrides.get(123), "high")
+        self.assertIn("high", reply_mock.await_args.args[1])
+
+    async def test_setreasoning_default_clears_override(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        handlers.chat_reasoning_overrides[123] = "high"
+        update = self._Update(chat_id=123)
+        context = self._Context(args=["default"])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.setreasoning(update, context)
+
+        self.assertNotIn(123, handlers.chat_reasoning_overrides)
+        self.assertIn("default", reply_mock.await_args.args[1].lower())
 
     async def test_request_process_escalation_sets_exit_code(self):
         handlers, tmp = build_handlers_for_test(escalate_exit_code=75)

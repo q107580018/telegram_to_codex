@@ -24,6 +24,7 @@ cp .env.example .env
 ```
 
 > 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型。
+> 可选设置 `CODEX_REASONING_EFFORT=low|medium|high` 作为全局默认推理等级。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
 > 如开启了 Telegram 代理，可用 `TELEGRAM_PROXY_PROBE_ENABLED=1` 在启动时探测代理可用性；若探测失败会自动回退直连（超时由 `TELEGRAM_PROXY_PROBE_TIMEOUT_SEC` 控制，默认 6 秒）。
 > 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=~/Desktop`（多目录逗号分隔）。
@@ -63,6 +64,7 @@ cp .env.example .env
 - `/new` 新建对话（清空上下文）
 - `/status` 查看 Codex 状态与轮询健康摘要
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
+- `/setreasoning <low|medium|high|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息
 

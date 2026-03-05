@@ -12,12 +12,23 @@ class AppConfig:
     telegram_bot_token: str
     telegram_proxy_url: str
     codex_model: str
+    codex_reasoning_effort: str
     codex_bin: str
     codex_project_dir: str
     codex_timeout_sec: int
     codex_sandbox: str
     codex_add_dirs_raw: str
     allowed_user_ids_raw: str
+
+
+VALID_REASONING_EFFORTS = {"low", "medium", "high"}
+
+
+def normalize_reasoning_effort(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in VALID_REASONING_EFFORTS:
+        return normalized
+    return ""
 
 
 def resolve_codex_bin(codex_bin_raw: str) -> str:
@@ -78,6 +89,9 @@ def load_config() -> AppConfig:
         telegram_bot_token=telegram_bot_token,
         telegram_proxy_url=os.getenv("TELEGRAM_PROXY_URL", "").strip(),
         codex_model=os.getenv("CODEX_MODEL", "").strip(),
+        codex_reasoning_effort=normalize_reasoning_effort(
+            os.getenv("CODEX_REASONING_EFFORT", "")
+        ),
         codex_bin=resolved_bin,
         codex_project_dir=codex_project_dir,
         codex_timeout_sec=int(os.getenv("CODEX_TIMEOUT_SEC", "600").strip()),

@@ -1,8 +1,9 @@
 import json
 import os
 import subprocess
+from typing import Optional
 
-from config import AppConfig
+from config import AppConfig, normalize_reasoning_effort
 
 
 def build_prompt(system_prompt: str, history: list[dict]) -> str:
@@ -20,7 +21,9 @@ def ask_codex(config: AppConfig, prompt: str) -> str:
     return reply
 
 
-def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
+def ask_codex_with_meta(
+    config: AppConfig, prompt: str, reasoning_effort: Optional[str] = None
+) -> tuple[str, dict]:
     cmd = [config.codex_bin, "exec", "--skip-git-repo-check"]
     if config.codex_project_dir:
         cmd.extend(["--cd", config.codex_project_dir])
@@ -34,9 +37,18 @@ def ask_codex_with_meta(config: AppConfig, prompt: str) -> tuple[str, dict]:
                 cmd.extend(["--add-dir", normalized_path])
     if config.codex_model:
         cmd.extend(["--model", config.codex_model])
+    resolved_effort = normalize_reasoning_effort(
+        reasoning_effort
+        if reasoning_effort is not None
+        else config.codex_reasoning_effort
+    )
+    if resolved_effort:
+        # codex exec 通过 -c 覆盖配置键来控制推理等级。
+        cmd.extend(["-c", f'model_reasoning_effort="{resolved_effort}"'])
 
+    exec_cmd = cmd + ["--json", prompt]
     result = subprocess.run(
-        cmd + ["--json", prompt],
+        exec_cmd,
         capture_output=True,
         text=True,
         timeout=config.codex_timeout_sec,
@@ -108,6 +120,7 @@ def get_codex_status(config: AppConfig) -> str:
         lines.append(f"- 登录：检查失败（exit {login_code}）{': ' + login_out if login_out else ''}")
 
     lines.append(f"- 模型：{config.codex_model or 'default'}")
+    lines.append(f"- 推理等级：{config.codex_reasoning_effort or 'default'}")
     lines.append(f"- 工作目录：{config.codex_project_dir}")
     lines.append(f"- 沙箱：{config.codex_sandbox or 'default'}")
     lines.append(f"- 可写目录：{config.codex_add_dirs_raw or '(none)'}")
@@ -132,4 +145,5 @@ def get_codex_runtime_info(config: AppConfig) -> dict:
         "version": version_out if version_code == 0 else "",
         "login": login_out if login_code == 0 else "",
         "model": config.codex_model or "default",
+        "reasoning_effort": config.codex_reasoning_effort or "default",
     }
