@@ -137,12 +137,18 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             await handlers.setreasoning(update, context)
 
         self.assertEqual(handlers.chat_reasoning_overrides.get(123), "high")
+        self.assertEqual(handlers.config.codex_reasoning_effort, "high")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_REASONING_EFFORT=high", env_text)
         self.assertIn("high", reply_mock.await_args.args[1])
 
     async def test_setreasoning_default_clears_override(self):
         handlers, tmp = build_handlers_for_test()
         self.addCleanup(tmp.cleanup)
 
+        with open(handlers.project_service.env_path, "w", encoding="utf-8") as f:
+            f.write("CODEX_REASONING_EFFORT=high\n")
         handlers.chat_reasoning_overrides[123] = "high"
         update = self._Update(chat_id=123)
         context = self._Context(args=["default"])
@@ -151,6 +157,10 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             await handlers.setreasoning(update, context)
 
         self.assertNotIn(123, handlers.chat_reasoning_overrides)
+        self.assertEqual(handlers.config.codex_reasoning_effort, "")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_REASONING_EFFORT=", env_text)
         self.assertIn("default", reply_mock.await_args.args[1].lower())
 
     async def test_request_process_escalation_sets_exit_code(self):

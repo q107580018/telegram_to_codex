@@ -317,8 +317,16 @@ class BotHandlers:
         value = (context.args[0] or "").strip().lower()
         command = f"/setreasoning {' '.join(context.args)}"
         if value == "default":
-            self.chat_reasoning_overrides.pop(chat_id, None)
-            reply = "已清除会话推理等级覆盖，恢复使用默认（default）配置。"
+            try:
+                self.project_service.set_default_reasoning_effort("")
+                self.config = replace(self.config, codex_reasoning_effort="")
+                self.chat_reasoning_overrides.pop(chat_id, None)
+            except Exception as exc:
+                reply = f"设置失败：写入 .env 失败：{exc}"
+                await reply_text_with_retry(update, reply)
+                self.chat_store.append_command_history(chat_id, command, reply)
+                return
+            reply = "已清除会话推理等级覆盖，并清空 .env 默认推理等级（default）。"
             await reply_text_with_retry(update, reply)
             self.chat_store.append_command_history(chat_id, command, reply)
             return
@@ -330,8 +338,16 @@ class BotHandlers:
             self.chat_store.append_command_history(chat_id, command, reply)
             return
 
-        self.chat_reasoning_overrides[chat_id] = normalized
-        reply = f"已设置当前会话推理等级：{normalized}"
+        try:
+            self.project_service.set_default_reasoning_effort(normalized)
+            self.config = replace(self.config, codex_reasoning_effort=normalized)
+            self.chat_reasoning_overrides[chat_id] = normalized
+        except Exception as exc:
+            reply = f"设置失败：写入 .env 失败：{exc}"
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+        reply = f"已设置当前会话推理等级：{normalized}（并已写入 .env 作为全局默认）"
         await reply_text_with_retry(update, reply)
         self.chat_store.append_command_history(chat_id, command, reply)
 
