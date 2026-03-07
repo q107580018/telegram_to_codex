@@ -191,6 +191,69 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CODEX_REASONING_EFFORT=", env_text)
         self.assertIn("default", reply_mock.await_args.args[1].lower())
 
+    async def test_models_without_args_lists_choices(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=[])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.models(update, context)
+
+        reply = reply_mock.await_args.args[1]
+        self.assertIn("用法：/models <模型>", reply)
+        self.assertIn("可选模型：", reply)
+        self.assertIn("未配置 CODEX_ALLOWED_MODELS", reply)
+
+    async def test_models_sets_model_and_persists_env(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=["gpt-5-codex"])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.models(update, context)
+
+        self.assertEqual(handlers.config.codex_model, "gpt-5-codex")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_MODEL=gpt-5-codex", env_text)
+        self.assertIn("gpt-5-codex", reply_mock.await_args.args[1])
+
+    async def test_models_lowercases_model_before_persist(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=["GPT-5.4"])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.models(update, context)
+
+        self.assertEqual(handlers.config.codex_model, "gpt-5.4")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_MODEL=gpt-5.4", env_text)
+        reply = reply_mock.await_args.args[1]
+        self.assertIn("已设置模型：gpt-5.4", reply)
+
+    async def test_models_list_lowercases_allowed_models_from_env(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        with open(handlers.project_service.env_path, "w", encoding="utf-8") as f:
+            f.write("CODEX_ALLOWED_MODELS=GPT-5.3-Codex,GPT-5.4,O3\n")
+        update = self._Update(chat_id=123)
+        context = self._Context(args=[])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.models(update, context)
+
+        reply = reply_mock.await_args.args[1]
+        self.assertIn("可选模型：gpt-5.3-codex、gpt-5.4、o3", reply)
+
     async def test_request_process_escalation_sets_exit_code(self):
         handlers, tmp = build_handlers_for_test(escalate_exit_code=75)
         self.addCleanup(tmp.cleanup)

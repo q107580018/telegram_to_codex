@@ -230,6 +230,7 @@ def main() -> int:
         app.add_handler(CommandHandler("status", handlers.status))
         app.add_handler(CommandHandler("setproject", handlers.setproject))
         app.add_handler(CommandHandler("setreasoning", handlers.setreasoning))
+        app.add_handler(CommandHandler("models", handlers.models))
         app.add_handler(CommandHandler("getproject", handlers.getproject))
         app.add_handler(CommandHandler("history", handlers.history))
         app.add_handler(

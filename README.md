@@ -23,7 +23,8 @@ cp .env.example .env
 # 编辑 .env 填入 TELEGRAM_BOT_TOKEN
 ```
 
-> 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型。
+> 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型（建议使用小写模型 ID）。
+> 可选设置 `CODEX_ALLOWED_MODELS`（逗号分隔）供 `/models` 展示可选项；不设置时 `/models <模型>` 允许直接输入任意模型名（展示时会统一转为小写）。
 > 可选设置 `CODEX_REASONING_EFFORT=low|medium|high` 作为全局默认推理等级。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
 > 如开启了 Telegram 代理，可用 `TELEGRAM_PROXY_PROBE_ENABLED=1` 在启动时探测代理可用性；若探测失败会自动回退直连（超时由 `TELEGRAM_PROXY_PROBE_TIMEOUT_SEC` 控制，默认 6 秒）。
@@ -65,6 +66,8 @@ cp .env.example .env
 - `/status` 查看 Codex 状态、账号额度快照与轮询健康摘要
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
 - `/setreasoning <low|medium|high|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
+- `/models` 查看可选模型与当前模型
+- `/models <模型>` 切换模型，并写入 `.env` 持久化
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息
 

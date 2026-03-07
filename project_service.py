@@ -43,3 +43,7 @@ class ProjectService:
         if normalized not in {"", "low", "medium", "high"}:
             raise ValueError(f"无效推理等级：{effort}")
         return upsert_env_key(self._env_path, "CODEX_REASONING_EFFORT", normalized)
+
+    def set_default_model(self, model: str) -> str:
+        normalized = (model or "").strip()
+        return upsert_env_key(self._env_path, "CODEX_MODEL", normalized)

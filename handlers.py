@@ -14,6 +14,7 @@ from config import AppConfig, normalize_reasoning_effort
 from polling_health import PollingHealthManager
 from project_service import ProjectService
 from skills import list_available_skills
+from env_store import read_env_key
 from telegram_io import (
     extract_image_sources,
     keep_typing,
@@ -186,7 +187,7 @@ class BotHandlers:
             update,
             "已连接 Codex。直接发消息即可对话。\n"
             "命令：/new 新对话，/skills 查看可用技能，/status 查看 Codex 状态，"
-            "/setproject 切换目录，/setreasoning 设置推理等级，/getproject 查看目录，/history 查看历史",
+            "/setproject 切换目录，/setreasoning 设置推理等级，/models 查看/设置模型，/getproject 查看目录，/history 查看历史",
         )
 
     async def new_chat(
@@ -408,6 +409,55 @@ class BotHandlers:
         await reply_text_with_retry(update, reply)
         self.chat_store.append_command_history(chat_id, command, reply)
 
+    async def models(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        self.mark_polling_healthy()
+        if not self.is_allowed(update):
+            await reply_text_with_retry(update, "你没有权限使用这个 bot。")
+            return
+
+        chat_id = self.get_chat_id(update)
+        if chat_id is None:
+            return
+
+        current = (self.config.codex_model or "default").lower()
+        raw_allowed = read_env_key(self.project_service.env_path, "CODEX_ALLOWED_MODELS")
+        allowed_models = [
+            item.strip().lower() for item in raw_allowed.split(",") if item.strip()
+        ]
+        has_allowed = bool(allowed_models)
+        model_list = "、".join(allowed_models) if has_allowed else "(未配置 CODEX_ALLOWED_MODELS，支持直接设置任意模型名)"
+        if not context.args:
+            command = "/models"
+            reply = (
+                "用法：/models <模型>\n"
+                f"当前模型：{current}\n"
+                f"可选模型：{model_list}"
+            )
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        selected = (context.args[0] or "").strip().lower()
+        command = f"/models {' '.join(context.args)}"
+        if not selected:
+            reply = "模型名不能为空。用法：/models <模型>"
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        try:
+            self.project_service.set_default_model(selected)
+            self.config = replace(self.config, codex_model=selected)
+        except Exception as exc:
+            reply = f"设置失败：写入 .env 失败：{exc}"
+            await reply_text_with_retry(update, reply)
+            self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        reply = f"已设置模型：{selected}（并已写入 .env 作为全局默认）"
+        await reply_text_with_retry(update, reply)
+        self.chat_store.append_command_history(chat_id, command, reply)
+
     async def getproject(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -459,6 +509,7 @@ class BotHandlers:
                     BotCommand("status", "查看 Codex 状态"),
                     BotCommand("setproject", "切换 Codex 项目目录"),
                     BotCommand("setreasoning", "设置推理等级"),
+                    BotCommand("models", "查看并设置模型"),
                     BotCommand("getproject", "查看当前项目目录与 .env"),
                     BotCommand("history", "查看当前会话历史信息"),
                     BotCommand("start", "显示帮助"),
