@@ -40,6 +40,10 @@ class ProjectService:
 
     def set_default_reasoning_effort(self, effort: str) -> str:
         normalized = (effort or "").strip().lower()
-        if normalized not in {"", "low", "medium", "high"}:
+        if normalized not in {"", "none", "minimal", "low", "medium", "high", "xhigh"}:
             raise ValueError(f"无效推理等级：{effort}")
         return upsert_env_key(self._env_path, "CODEX_REASONING_EFFORT", normalized)
+
+    def set_default_model(self, model: str) -> str:
+        normalized = (model or "").strip()
+        return upsert_env_key(self._env_path, "CODEX_MODEL", normalized)

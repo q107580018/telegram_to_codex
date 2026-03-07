@@ -6,7 +6,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 
 from chat_store import ChatStore
 from config import load_config, migrate_codex_bin_env_if_needed
@@ -230,6 +236,11 @@ def main() -> int:
         app.add_handler(CommandHandler("status", handlers.status))
         app.add_handler(CommandHandler("setproject", handlers.setproject))
         app.add_handler(CommandHandler("setreasoning", handlers.setreasoning))
+        app.add_handler(
+            CallbackQueryHandler(handlers.on_reasoning_button, pattern=r"^set_reasoning:")
+        )
+        app.add_handler(CommandHandler("models", handlers.models))
+        app.add_handler(CallbackQueryHandler(handlers.on_model_button, pattern=r"^set_model:"))
         app.add_handler(CommandHandler("getproject", handlers.getproject))
         app.add_handler(CommandHandler("history", handlers.history))
         app.add_handler(

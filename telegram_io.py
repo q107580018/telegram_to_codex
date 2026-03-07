@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlparse
 from typing import Optional
 
 from telegram import Message, Update
+from telegram import InlineKeyboardMarkup
 from telegram.error import NetworkError, TimedOut
 
 IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
@@ -20,10 +21,12 @@ SUPPORTED_IMAGE_EXTS = {
 }
 
 
-async def reply_text_with_retry(update: Update, text: str) -> None:
+async def reply_text_with_retry(
+    update: Update, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None
+) -> None:
     for i in range(3):
         try:
-            await update.message.reply_text(text)
+            await update.message.reply_text(text, reply_markup=reply_markup)
             return
         except (TimedOut, NetworkError):
             if i == 2:

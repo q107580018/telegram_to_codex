@@ -23,11 +23,12 @@ cp .env.example .env
 # 编辑 .env 填入 TELEGRAM_BOT_TOKEN
 ```
 
-> 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型。
-> 可选设置 `CODEX_REASONING_EFFORT=low|medium|high` 作为全局默认推理等级。
+> 可选设置 `CODEX_MODEL`，不填则使用你本机 codex 默认模型（建议使用小写模型 ID）。
+> 可选设置 `CODEX_ALLOWED_MODELS`（逗号分隔）供 `/models` 展示可选项；不设置时 `/models <模型>` 允许直接输入任意模型名（展示时会统一转为小写）。
+> 可选设置 `CODEX_REASONING_EFFORT=none|minimal|low|medium|high|xhigh` 作为全局默认推理等级。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
 > 如开启了 Telegram 代理，可用 `TELEGRAM_PROXY_PROBE_ENABLED=1` 在启动时探测代理可用性；若探测失败会自动回退直连（超时由 `TELEGRAM_PROXY_PROBE_TIMEOUT_SEC` 控制，默认 6 秒）。
-> 如需允许改桌面等目录，可设置 `CODEX_SANDBOX=danger-full-access` 与 `CODEX_ADD_DIRS=~/Desktop`（多目录逗号分隔）。
+> 可设置 `CODEX_SANDBOX=danger-full-access` 指定 codex 执行权限策略。
 > 可设置 `CHAT_MAX_TURNS` 控制上下文保留轮次（默认 12 轮）。
 > 日志默认按大小轮转：`BOT_LOG_MAX_BYTES`（默认 5MB）与 `BOT_LOG_BACKUP_COUNT`（默认 5 份）。
 > 如遇系统睡眠/唤醒后偶发失联，可调 `TELEGRAM_WAKE_WATCHDOG_INTERVAL_SEC` 与 `TELEGRAM_WAKE_GAP_THRESHOLD_SEC`。
@@ -64,7 +65,11 @@ cp .env.example .env
 - `/new` 新建对话（清空上下文）
 - `/status` 查看 Codex 状态、账号额度快照与轮询健康摘要
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
-- `/setreasoning <low|medium|high|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
+- `/setreasoning <none|minimal|low|medium|high|xhigh|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
+- `/setreasoning` 会返回可点击等级按钮（点击后立即切换并持久化）
+- `/models` 查看可选模型与当前模型
+- 若配置了 `CODEX_ALLOWED_MODELS`，`/models` 会返回可点击模型按钮（点击后立即切换并持久化）
+- `/models <模型>` 切换模型，并写入 `.env` 持久化
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息
 
