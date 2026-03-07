@@ -719,6 +719,15 @@ class BotHandlers:
         )
         stop_typing_event = asyncio.Event()
         typing_task = asyncio.create_task(keep_typing(update, stop_typing_event))
+        typing_stopped = False
+
+        async def stop_typing_once() -> None:
+            nonlocal typing_stopped
+            if typing_stopped:
+                return
+            typing_stopped = True
+            stop_typing_event.set()
+            await asyncio.sleep(0)
 
         try:
             prompt = build_prompt(self.system_prompt, history)
@@ -748,6 +757,7 @@ class BotHandlers:
                 "[chat:%s user:%s] ASSISTANT: %s", chat_id, user_id, reply_text
             )
 
+            await stop_typing_once()
             chunk_size = 3900
             for i in range(0, len(reply_text_for_telegram), chunk_size):
                 await reply_text_with_retry(
@@ -815,6 +825,7 @@ class BotHandlers:
                     await status_msg.edit_text("处理失败，正在返回错误信息。")
                 except Exception:
                     pass
+            await stop_typing_once()
             await reply_text_with_retry(update, f"请求失败：{exc}")
         finally:
             stop_typing_event.set()

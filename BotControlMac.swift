@@ -1177,6 +1177,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func mapTechnicalStartErrorToFriendly(_ raw: String) -> String {
         let lowered = raw.lowercased()
+        if lowered.contains("__bc_bot_exit__") {
+            return "bot 进程启动后立即退出（\(raw)），请查看启动日志定位根因。"
+        }
         if lowered.contains("missing telegram_bot_token") {
             return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN）。"
         }
@@ -1572,12 +1575,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func startBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; env -u ALL_PROXY -u all_proxy BOT_LOG_TO_STDOUT=0 nohup \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); sleep 2; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 1 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 1 \(q(logPath)) 2>/dev/null | tr -d '\\r' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
+        let runner = "cd \(q(runtimeDir)); env -u ALL_PROXY -u all_proxy BOT_LOG_TO_STDOUT=0 \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1; code=$?; ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"__BC_BOT_EXIT__ code=$code ts=$ts\" >> \(q(launchLogPath))"
+        let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-start] ts=$ts python=\(pythonPath) bot=\(botPath)\" >> \(q(launchLogPath)); if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; nohup /bin/zsh -lc \(q(runner)) >/dev/null 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); started=0; for _ in 1 2 3 4 5 6 7 8 9 10; do if ps -p \"$newpid\" >/dev/null 2>&1; then started=1; break; fi; sleep 0.1; done; if [ \"$started\" = \"1\" ]; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 20 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 20 \(q(logPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func stopBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then kill \"$pid\" >/dev/null 2>&1 || true; fi; fi; pkill -f \(q(botPath)) >/dev/null 2>&1 || true; rm -f \(q(pidPath)); echo stopped"
+        let cmd = "cd \(q(runtimeDir)) && ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-stop] ts=$ts\" >> \(q(launchLogPath)); if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then kill \"$pid\" >/dev/null 2>&1 || true; fi; fi; pkill -TERM -f \(q(botPath)) >/dev/null 2>&1 || true; for _ in 1 2 3 4 5 6 7 8 9 10; do if ! pgrep -f \(q(botPath)) >/dev/null 2>&1; then break; fi; sleep 0.1; done; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then pkill -9 -f \(q(botPath)) >/dev/null 2>&1 || true; echo \"[bc-stop] forced_kill=1\" >> \(q(launchLogPath)); else echo \"[bc-stop] forced_kill=0\" >> \(q(launchLogPath)); fi; rm -f \(q(pidPath)); echo stopped"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
