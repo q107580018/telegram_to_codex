@@ -30,7 +30,6 @@ def build_handlers_for_test(
         codex_project_dir=tmpdir.name,
         codex_timeout_sec=120,
         codex_sandbox="danger-full-access",
-        codex_add_dirs_raw="",
         allowed_user_ids_raw="",
     )
     project_service = ProjectService(initial_project_dir=tmpdir.name, env_path=env_path)
@@ -183,6 +182,23 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("CODEX_REASONING_EFFORT=high", env_text)
         self.assertIn("high", reply_mock.await_args.args[1])
 
+    async def test_setreasoning_accepts_minimal(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=["minimal"])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.setreasoning(update, context)
+
+        self.assertEqual(handlers.chat_reasoning_overrides.get(123), "minimal")
+        self.assertEqual(handlers.config.codex_reasoning_effort, "minimal")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_REASONING_EFFORT=minimal", env_text)
+        self.assertIn("minimal", reply_mock.await_args.args[1])
+
     async def test_setreasoning_default_clears_override(self):
         handlers, tmp = build_handlers_for_test()
         self.addCleanup(tmp.cleanup)
@@ -202,6 +218,39 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             env_text = f.read()
         self.assertIn("CODEX_REASONING_EFFORT=", env_text)
         self.assertIn("default", reply_mock.await_args.args[1].lower())
+
+    async def test_setreasoning_without_args_renders_inline_keyboard(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._Update(chat_id=123)
+        context = self._Context(args=[])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.setreasoning(update, context)
+
+        kwargs = reply_mock.await_args.kwargs
+        reply_markup = kwargs.get("reply_markup")
+        self.assertIsNotNone(reply_markup)
+        first_row = reply_markup.inline_keyboard[0]
+        self.assertEqual(first_row[0].callback_data, "set_reasoning:none")
+
+    async def test_reasoning_button_sets_and_persists_env(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._ButtonUpdate(chat_id=123, data="set_reasoning:HIGH")
+        context = self._Context(args=[])
+
+        await handlers.on_reasoning_button(update, context)
+
+        self.assertEqual(handlers.chat_reasoning_overrides.get(123), "high")
+        self.assertEqual(handlers.config.codex_reasoning_effort, "high")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_REASONING_EFFORT=high", env_text)
+        update.callback_query.answer.assert_awaited()
+        update.callback_query.edit_message_text.assert_awaited()
 
     async def test_models_without_args_lists_choices(self):
         handlers, tmp = build_handlers_for_test()

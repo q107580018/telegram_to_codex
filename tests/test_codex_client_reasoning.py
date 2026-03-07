@@ -23,7 +23,6 @@ class CodexClientReasoningTests(unittest.TestCase):
             codex_project_dir="/tmp",
             codex_timeout_sec=30,
             codex_sandbox="danger-full-access",
-            codex_add_dirs_raw="",
             allowed_user_ids_raw="",
         )
 

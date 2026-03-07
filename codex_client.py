@@ -31,12 +31,6 @@ def ask_codex_with_meta(
         cmd.extend(["--cd", config.codex_project_dir])
     if config.codex_sandbox:
         cmd.extend(["--sandbox", config.codex_sandbox])
-    if config.codex_add_dirs_raw:
-        for path in config.codex_add_dirs_raw.split(","):
-            path = path.strip()
-            if path:
-                normalized_path = os.path.abspath(os.path.expanduser(path))
-                cmd.extend(["--add-dir", normalized_path])
     if config.codex_model:
         cmd.extend(["--model", config.codex_model])
     resolved_effort = normalize_reasoning_effort(
@@ -125,7 +119,6 @@ def get_codex_status(config: AppConfig) -> str:
     lines.append(f"- 推理等级：{config.codex_reasoning_effort or 'default'}")
     lines.append(f"- 工作目录：{config.codex_project_dir}")
     lines.append(f"- 沙箱：{config.codex_sandbox or 'default'}")
-    lines.append(f"- 可写目录：{config.codex_add_dirs_raw or '(none)'}")
     return "\n".join(lines)
 
 

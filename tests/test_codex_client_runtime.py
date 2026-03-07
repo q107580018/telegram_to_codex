@@ -19,7 +19,6 @@ class CodexClientRuntimeTests(unittest.TestCase):
             codex_project_dir=project_dir,
             codex_timeout_sec=120,
             codex_sandbox="danger-full-access",
-            codex_add_dirs_raw="",
             allowed_user_ids_raw="",
         )
 

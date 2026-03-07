@@ -324,12 +324,22 @@ class BotHandlers:
         if not context.args:
             current = self.chat_reasoning_overrides.get(chat_id)
             default = self.config.codex_reasoning_effort or "default"
+            options = ["none", "minimal", "low", "medium", "high", "xhigh", "default"]
+            rows = [
+                [
+                    InlineKeyboardButton(
+                        option, callback_data=f"set_reasoning:{option}"
+                    )
+                ]
+                for option in options
+            ]
+            reply_markup = InlineKeyboardMarkup(rows)
             reply = (
-                "用法：/setreasoning <low|medium|high|default>\n"
+                "用法：/setreasoning <none|minimal|low|medium|high|xhigh|default>\n"
                 f"当前会话覆盖：{current or '(none)'}\n"
                 f"全局默认：{default}"
             )
-            await reply_text_with_retry(update, reply)
+            await reply_text_with_retry(update, reply, reply_markup=reply_markup)
             self.chat_store.append_command_history(chat_id, "/setreasoning", reply)
             return
 
@@ -352,7 +362,7 @@ class BotHandlers:
 
         normalized = normalize_reasoning_effort(value)
         if not normalized:
-            reply = "无效推理等级。可选：low、medium、high、default。"
+            reply = "无效推理等级。可选：none、minimal、low、medium、high、xhigh、default。"
             await reply_text_with_retry(update, reply)
             self.chat_store.append_command_history(chat_id, command, reply)
             return
@@ -369,6 +379,74 @@ class BotHandlers:
         reply = f"已设置当前会话推理等级：{normalized}（并已写入 .env 作为全局默认）"
         await reply_text_with_retry(update, reply)
         self.chat_store.append_command_history(chat_id, command, reply)
+
+    async def on_reasoning_button(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        self.mark_polling_healthy()
+        if not self.is_allowed(update):
+            if update.callback_query:
+                await update.callback_query.answer("你没有权限使用这个 bot。", show_alert=True)
+            return
+        query = update.callback_query
+        if not query:
+            return
+        raw_data = (query.data or "").strip()
+        if not raw_data.startswith("set_reasoning:"):
+            await query.answer()
+            return
+        selected = raw_data.split(":", 1)[1].strip().lower()
+        if not selected:
+            await query.answer("推理等级不能为空。", show_alert=True)
+            return
+
+        chat_id = self.get_chat_id(update)
+        command = f"/setreasoning {selected}"
+        if selected == "default":
+            try:
+                self.project_service.set_default_reasoning_effort("")
+                self.config = replace(self.config, codex_reasoning_effort="")
+                if chat_id is not None:
+                    self.chat_reasoning_overrides.pop(chat_id, None)
+            except Exception as exc:
+                await query.answer("设置失败", show_alert=True)
+                await query.edit_message_text(f"设置失败：写入 .env 失败：{exc}")
+                if chat_id is not None:
+                    self.chat_store.append_command_history(
+                        chat_id, command, f"设置失败：写入 .env 失败：{exc}"
+                    )
+                return
+            reply = "已清除会话推理等级覆盖，并清空 .env 默认推理等级（default）。"
+            await query.answer("推理等级已切换")
+            await query.edit_message_text(reply)
+            if chat_id is not None:
+                self.chat_store.append_command_history(chat_id, command, reply)
+            return
+
+        normalized = normalize_reasoning_effort(selected)
+        if not normalized:
+            await query.answer("无效推理等级", show_alert=True)
+            return
+
+        try:
+            self.project_service.set_default_reasoning_effort(normalized)
+            self.config = replace(self.config, codex_reasoning_effort=normalized)
+            if chat_id is not None:
+                self.chat_reasoning_overrides[chat_id] = normalized
+        except Exception as exc:
+            await query.answer("设置失败", show_alert=True)
+            await query.edit_message_text(f"设置失败：写入 .env 失败：{exc}")
+            if chat_id is not None:
+                self.chat_store.append_command_history(
+                    chat_id, command, f"设置失败：写入 .env 失败：{exc}"
+                )
+            return
+
+        reply = f"已设置当前会话推理等级：{normalized}（并已写入 .env 作为全局默认）"
+        await query.answer("推理等级已切换")
+        await query.edit_message_text(reply)
+        if chat_id is not None:
+            self.chat_store.append_command_history(chat_id, command, reply)
 
     async def setproject(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

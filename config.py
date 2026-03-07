@@ -17,11 +17,10 @@ class AppConfig:
     codex_project_dir: str
     codex_timeout_sec: int
     codex_sandbox: str
-    codex_add_dirs_raw: str
     allowed_user_ids_raw: str
 
 
-VALID_REASONING_EFFORTS = {"low", "medium", "high"}
+VALID_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
 
 
 def normalize_reasoning_effort(value: str) -> str:
@@ -96,6 +95,5 @@ def load_config() -> AppConfig:
         codex_project_dir=codex_project_dir,
         codex_timeout_sec=int(os.getenv("CODEX_TIMEOUT_SEC", "600").strip()),
         codex_sandbox=os.getenv("CODEX_SANDBOX", "danger-full-access").strip(),
-        codex_add_dirs_raw=os.getenv("CODEX_ADD_DIRS", "~/Desktop").strip(),
         allowed_user_ids_raw=os.getenv("ALLOWED_USER_IDS", "").strip(),
     )
