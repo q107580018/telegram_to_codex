@@ -4,7 +4,7 @@ import time
 from dataclasses import replace
 from typing import Optional
 
-from telegram import BotCommand, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
@@ -433,7 +433,18 @@ class BotHandlers:
                 f"当前模型：{current}\n"
                 f"可选模型：{model_list}"
             )
-            await reply_text_with_retry(update, reply)
+            reply_markup = None
+            if has_allowed:
+                rows = [
+                    [
+                        InlineKeyboardButton(
+                            model, callback_data=f"set_model:{model}"
+                        )
+                    ]
+                    for model in allowed_models
+                ]
+                reply_markup = InlineKeyboardMarkup(rows)
+            await reply_text_with_retry(update, reply, reply_markup=reply_markup)
             self.chat_store.append_command_history(chat_id, command, reply)
             return
 
@@ -457,6 +468,47 @@ class BotHandlers:
         reply = f"已设置模型：{selected}（并已写入 .env 作为全局默认）"
         await reply_text_with_retry(update, reply)
         self.chat_store.append_command_history(chat_id, command, reply)
+
+    async def on_model_button(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        self.mark_polling_healthy()
+        if not self.is_allowed(update):
+            if update.callback_query:
+                await update.callback_query.answer("你没有权限使用这个 bot。", show_alert=True)
+            return
+        query = update.callback_query
+        if not query:
+            return
+        raw_data = (query.data or "").strip()
+        if not raw_data.startswith("set_model:"):
+            await query.answer()
+            return
+        selected = raw_data.split(":", 1)[1].strip().lower()
+        if not selected:
+            await query.answer("模型名不能为空。", show_alert=True)
+            return
+
+        chat_id = self.get_chat_id(update)
+        command = f"/models {selected}"
+        try:
+            self.project_service.set_default_model(selected)
+            self.config = replace(self.config, codex_model=selected)
+            await query.answer("模型已切换")
+            await query.edit_message_text(
+                f"已设置模型：{selected}（并已写入 .env 作为全局默认）"
+            )
+            if chat_id is not None:
+                self.chat_store.append_command_history(
+                    chat_id, command, f"已设置模型：{selected}（并已写入 .env 作为全局默认）"
+                )
+        except Exception as exc:
+            await query.answer("设置失败", show_alert=True)
+            await query.edit_message_text(f"设置失败：写入 .env 失败：{exc}")
+            if chat_id is not None:
+                self.chat_store.append_command_history(
+                    chat_id, command, f"设置失败：写入 .env 失败：{exc}"
+                )
 
     async def getproject(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

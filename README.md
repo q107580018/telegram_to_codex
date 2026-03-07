@@ -67,6 +67,7 @@ cp .env.example .env
 - `/setproject <路径>` 切换项目目录（不存在会自动创建）
 - `/setreasoning <low|medium|high|default>` 设置当前会话推理等级（`default` 表示回到 `.env` 默认）
 - `/models` 查看可选模型与当前模型
+- 若配置了 `CODEX_ALLOWED_MODELS`，`/models` 会返回可点击模型按钮（点击后立即切换并持久化）
 - `/models <模型>` 切换模型，并写入 `.env` 持久化
 - `/getproject` 查看当前运行目录和 `.env` 中目录配置
 - `/history` 查看当前会话历史信息

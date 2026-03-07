@@ -70,6 +70,18 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         def __init__(self, args: list[str]):
             self.args = args
 
+    class _CallbackQuery:
+        def __init__(self, data: str):
+            self.data = data
+            self.answer = AsyncMock()
+            self.edit_message_text = AsyncMock()
+
+    class _ButtonUpdate:
+        def __init__(self, chat_id: int, data: str):
+            self.effective_chat = HandlerStabilityTests._Chat(chat_id)
+            self.effective_user = None
+            self.callback_query = HandlerStabilityTests._CallbackQuery(data)
+
     async def test_network_error_threshold_schedules_restart(self):
         handlers, tmp = build_handlers_for_test(restart_threshold=1)
         self.addCleanup(tmp.cleanup)
@@ -253,6 +265,40 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
 
         reply = reply_mock.await_args.args[1]
         self.assertIn("可选模型：gpt-5.3-codex、gpt-5.4、o3", reply)
+
+    async def test_models_without_args_renders_inline_keyboard_when_allowed_models_exist(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        with open(handlers.project_service.env_path, "w", encoding="utf-8") as f:
+            f.write("CODEX_ALLOWED_MODELS=GPT-5.4,GPT-5.3-Codex\n")
+        update = self._Update(chat_id=123)
+        context = self._Context(args=[])
+
+        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+            await handlers.models(update, context)
+
+        kwargs = reply_mock.await_args.kwargs
+        reply_markup = kwargs.get("reply_markup")
+        self.assertIsNotNone(reply_markup)
+        first_row = reply_markup.inline_keyboard[0]
+        self.assertEqual(first_row[0].callback_data, "set_model:gpt-5.4")
+
+    async def test_model_button_sets_model_and_persists_env(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        update = self._ButtonUpdate(chat_id=123, data="set_model:GPT-5.4")
+        context = self._Context(args=[])
+
+        await handlers.on_model_button(update, context)
+
+        self.assertEqual(handlers.config.codex_model, "gpt-5.4")
+        with open(handlers.project_service.env_path, "r", encoding="utf-8") as f:
+            env_text = f.read()
+        self.assertIn("CODEX_MODEL=gpt-5.4", env_text)
+        update.callback_query.answer.assert_awaited()
+        update.callback_query.edit_message_text.assert_awaited()
 
     async def test_request_process_escalation_sets_exit_code(self):
         handlers, tmp = build_handlers_for_test(escalate_exit_code=75)
