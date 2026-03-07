@@ -27,7 +27,6 @@ cp .env.example .env
 > 可选设置 `CODEX_ALLOWED_MODELS`（逗号分隔）供 `/models` 展示可选项；不设置时 `/models <模型>` 允许直接输入任意模型名（展示时会统一转为小写）。
 > 可选设置 `CODEX_REASONING_EFFORT=none|minimal|low|medium|high|xhigh` 作为全局默认推理等级。
 > 如果 Telegram 在本地网络不可达，可设置 `TELEGRAM_PROXY_URL=http://127.0.0.1:7897`。
-> 如开启了 Telegram 代理，可用 `TELEGRAM_PROXY_PROBE_ENABLED=1` 在启动时探测代理可用性；若探测失败会自动回退直连（超时由 `TELEGRAM_PROXY_PROBE_TIMEOUT_SEC` 控制，默认 6 秒）。
 > 可设置 `CODEX_SANDBOX=danger-full-access` 指定 codex 执行权限策略。
 > 可设置 `CHAT_MAX_TURNS` 控制上下文保留轮次（默认 12 轮）。
 > 日志默认按大小轮转：`BOT_LOG_MAX_BYTES`（默认 5MB）与 `BOT_LOG_BACKUP_COUNT`（默认 5 份）。
