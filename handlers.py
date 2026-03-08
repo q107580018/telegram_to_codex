@@ -4,12 +4,13 @@ import time
 from dataclasses import replace
 from typing import Optional
 
+from bridge_core import BridgeCore, BridgeInboundMessage
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from chat_store import ChatStore
-from codex_client import ask_codex_with_meta, build_prompt, get_codex_runtime_info
+from codex_client import ask_codex_with_meta, get_codex_runtime_info
 from config import AppConfig, normalize_reasoning_effort
 from polling_health import PollingHealthManager
 from project_service import ProjectService
@@ -62,6 +63,11 @@ class BotHandlers:
         self.polling_escalate_exit_code = polling_escalate_exit_code
         self.escalate_exit_code_requested: Optional[int] = None
         self.chat_reasoning_overrides: dict[int, str] = {}
+        self.bridge_core = BridgeCore(
+            chat_store=chat_store,
+            system_prompt=system_prompt,
+            request_reply=self.ask_codex_with_retry,
+        )
 
         self.polling_health = PollingHealthManager(
             restart_threshold=polling_restart_threshold,
@@ -712,7 +718,6 @@ class BotHandlers:
             return
 
         self.logger.info("[chat:%s user:%s] USER: %s", chat_id, user_id, user_text)
-        history = self.chat_store.append_user_message(chat_id, user_text)
 
         status_msg = await send_message_with_retry(
             update, "已收到，正在思考中，请稍等..."
@@ -730,11 +735,17 @@ class BotHandlers:
             await asyncio.sleep(0)
 
         try:
-            prompt = build_prompt(self.system_prompt, history)
-            reasoning_effort = self.chat_reasoning_overrides.get(chat_id)
-            reply_text, meta = await self.ask_codex_with_retry(
-                prompt, reasoning_effort=reasoning_effort
+            bridge_reply = await self.bridge_core.process_user_text(
+                BridgeInboundMessage(
+                    platform="telegram",
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=user_text,
+                    reasoning_effort=self.chat_reasoning_overrides.get(chat_id),
+                )
             )
+            reply_text = bridge_reply.text
+            meta = bridge_reply.meta
             local_image_paths, remote_image_urls, had_image_markdown = extract_image_sources(
                 reply_text, base_dir=self.project_service.project_dir
             )
@@ -747,12 +758,6 @@ class BotHandlers:
                 len(remote_image_urls),
             )
             reply_text_for_telegram = remove_markdown_images(reply_text)
-            usage = (meta or {}).get("usage") if isinstance(meta, dict) else {}
-            self.chat_store.update_usage_stats(
-                chat_id, usage if isinstance(usage, dict) else {}
-            )
-
-            self.chat_store.append_assistant_message(chat_id, reply_text)
             self.logger.info(
                 "[chat:%s user:%s] ASSISTANT: %s", chat_id, user_id, reply_text
             )

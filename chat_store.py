@@ -2,18 +2,21 @@ import json
 import logging
 import os
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Union
 
 
 logger = logging.getLogger(__name__)
+
+
+ChatKey = Union[int, str]
 
 
 class ChatStore:
     def __init__(self, history_file: str, max_turns: int):
         self._history_file = history_file
         self._max_turns = max_turns
-        self.histories: Dict[int, List[dict]] = defaultdict(list)
-        self.usage_stats: Dict[int, dict] = defaultdict(dict)
+        self.histories: Dict[ChatKey, List[dict]] = defaultdict(list)
+        self.usage_stats: Dict[ChatKey, dict] = defaultdict(dict)
 
     @property
     def history_file(self) -> str:
@@ -51,10 +54,12 @@ class ChatStore:
             return
 
         for raw_chat_id, history in data.items():
-            try:
-                chat_id = int(raw_chat_id)
-            except (TypeError, ValueError):
+            if not isinstance(raw_chat_id, str):
                 continue
+            try:
+                chat_id: ChatKey = int(raw_chat_id)
+            except (TypeError, ValueError):
+                chat_id = raw_chat_id
             if not isinstance(history, list):
                 continue
             valid_history = []
@@ -69,12 +74,12 @@ class ChatStore:
             if valid_history:
                 self.histories[chat_id] = valid_history
 
-    def reset_chat(self, chat_id: int) -> None:
+    def reset_chat(self, chat_id: ChatKey) -> None:
         self.histories[chat_id] = []
         self.save()
 
     def append_command_history(
-        self, chat_id: int, command_text: str, reply_text: str
+        self, chat_id: ChatKey, command_text: str, reply_text: str
     ) -> None:
         history = self.histories[chat_id]
         history.append({"role": "user", "content": command_text})
@@ -82,20 +87,20 @@ class ChatStore:
         self.trim_history(history)
         self.save()
 
-    def append_user_message(self, chat_id: int, text: str) -> List[dict]:
+    def append_user_message(self, chat_id: ChatKey, text: str) -> List[dict]:
         history = self.histories[chat_id]
         history.append({"role": "user", "content": text})
         self.trim_history(history)
         self.save()
         return history
 
-    def append_assistant_message(self, chat_id: int, text: str) -> None:
+    def append_assistant_message(self, chat_id: ChatKey, text: str) -> None:
         history = self.histories[chat_id]
         history.append({"role": "assistant", "content": text})
         self.trim_history(history)
         self.save()
 
-    def update_usage_stats(self, chat_id: int, usage: dict) -> None:
+    def update_usage_stats(self, chat_id: ChatKey, usage: dict) -> None:
         if not isinstance(usage, dict):
             return
         input_tokens = int(usage.get("input_tokens") or 0)

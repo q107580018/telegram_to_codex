@@ -18,8 +18,8 @@ class AppConfig:
     codex_timeout_sec: int
     codex_sandbox: str
     allowed_user_ids_raw: str
-
-
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
 VALID_REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}
 
 
@@ -70,11 +70,11 @@ def migrate_codex_bin_env_if_needed(
         return False
 
 
-def load_config() -> AppConfig:
+def load_config(require_telegram_bot_token: bool = True) -> AppConfig:
     load_dotenv()
 
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not telegram_bot_token:
+    if require_telegram_bot_token and not telegram_bot_token:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN in environment variables.")
 
     codex_bin_raw = os.getenv("CODEX_BIN", "codex").strip()
@@ -96,4 +96,6 @@ def load_config() -> AppConfig:
         codex_timeout_sec=int(os.getenv("CODEX_TIMEOUT_SEC", "600").strip()),
         codex_sandbox=os.getenv("CODEX_SANDBOX", "danger-full-access").strip(),
         allowed_user_ids_raw=os.getenv("ALLOWED_USER_IDS", "").strip(),
+        feishu_app_id=os.getenv("FEISHU_APP_ID", "").strip(),
+        feishu_app_secret=os.getenv("FEISHU_APP_SECRET", "").strip(),
     )
