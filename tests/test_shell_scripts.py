@@ -50,6 +50,7 @@ class ShellScriptTests(unittest.TestCase):
     def test_build_app_syncs_platform_runtime_files(self):
         script = (ROOT / "build_app.sh").read_text(encoding="utf-8")
         for name in [
+            "command_service.py",
             "feishu_bot.py",
             "bridge_core.py",
             "platform_messages.py",
@@ -60,6 +61,16 @@ class ShellScriptTests(unittest.TestCase):
             "feishu_adapter.py",
         ]:
             self.assertIn(f'"$ROOT_DIR/{name}"', script)
+
+    def test_bot_control_syncs_required_runtime_files(self):
+        source = (ROOT / "BotControlMac.swift").read_text(encoding="utf-8")
+        for name in [
+            "command_service.py",
+            "feishu_bot.py",
+            "handlers.py",
+            "skills.py",
+        ]:
+            self.assertIn(f'"{name}"', source)
 
 
 if __name__ == "__main__":

@@ -1568,6 +1568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "feishu_bot.py",
             "requirements.txt",
             ".env.example",
+            "command_service.py",
             "config.py",
             "env_store.py",
             "chat_store.py",

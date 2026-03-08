@@ -34,3 +34,6 @@ CodexBridge.app/
 
 # Local Codex runtime artifacts
 .codex/
+
+# Local planning docs
+docs/

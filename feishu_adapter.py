@@ -21,7 +21,9 @@ class FeishuAdapter:
     platform_id = "feishu"
 
     def build_inbound_message(
-        self, event: FeishuPrivateTextEvent
+        self,
+        event: FeishuPrivateTextEvent,
+        reasoning_effort: str | None = None,
     ) -> PlatformInboundMessage:
         return PlatformInboundMessage(
             platform=self.platform_id,
@@ -29,6 +31,7 @@ class FeishuAdapter:
             user_id=event.user_id,
             message_id=event.message_id,
             text=event.text,
+            reasoning_effort=reasoning_effort,
         )
 
     def send_outbound(

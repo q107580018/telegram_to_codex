@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bridge_core import BridgeReply
+from command_service import CommandResult
 from config import AppConfig
 from feishu_io import FeishuPrivateTextEvent
 from feishu_bot import build_api_client, handle_private_text_event, main
@@ -130,6 +131,49 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         add_mock.assert_called_once_with(client, "om_123")
         remove_mock.assert_called_once_with(client, "om_123", "typing_1")
         adapter.send_outbound.assert_called_once()
+
+    async def test_handle_private_text_event_short_circuits_slash_command(self):
+        inbound = FeishuPrivateTextEvent(
+            chat_id="oc_123",
+            user_id="ou_123",
+            message_id="om_123",
+            text="/new",
+        )
+        client = object()
+        core = AsyncMock()
+        logger = MagicMock()
+        adapter = MagicMock()
+        adapter.send_outbound.return_value = [{"message_id": "om_out"}]
+        command_service = MagicMock()
+        command_service.try_handle.return_value = CommandResult(
+            handled=True,
+            reply_text="已新建对话并清空上下文。",
+            command_text="/new",
+            store_history=False,
+        )
+
+        async def passthrough_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with (
+            patch("feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
+            patch("feishu_bot.add_typing_reaction", return_value={"reaction_id": "typing_1"}),
+            patch("feishu_bot.remove_typing_reaction"),
+        ):
+            await handle_private_text_event(
+                core=core,
+                client=client,
+                event=inbound,
+                logger=logger,
+                adapter=adapter,
+                command_service=command_service,
+            )
+
+        command_service.try_handle.assert_called_once_with("feishu", "oc_123", "/new")
+        core.process_user_text.assert_not_called()
+        adapter.send_outbound.assert_called_once()
+        outbound = adapter.send_outbound.call_args.args[2]
+        self.assertEqual(outbound.text, "已新建对话并清空上下文。")
 
     async def test_handle_private_text_event_ignores_typing_reaction_failures(self):
         inbound = FeishuPrivateTextEvent(

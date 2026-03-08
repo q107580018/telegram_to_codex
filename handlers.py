@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Optional
 
 from bridge_core import BridgeCore
+from command_service import CommandResult, CommandService, render_status_text
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import ContextTypes
@@ -76,6 +77,27 @@ class BotHandlers:
         )
         self.polling_restart_lock = asyncio.Lock()
         self.wake_watchdog_task: Optional[asyncio.Task] = None
+        self.command_service = CommandService(
+            config_getter=lambda: self.config,
+            config_setter=self._set_config,
+            project_service=self.project_service,
+            chat_store=self.chat_store,
+            chat_reasoning_overrides=self.chat_reasoning_overrides,
+            get_runtime_info=get_codex_runtime_info,
+            list_skills=list_available_skills,
+            get_health_snapshot=lambda: self.polling_health.snapshot(
+                now=time.monotonic()
+            ),
+        )
+
+    def _set_config(self, next_config: AppConfig) -> None:
+        self.config = next_config
+
+    def _run_command(self, chat_id: int, text: str) -> CommandResult:
+        return self.command_service.try_handle("telegram", chat_id, text)
+
+    async def _run_command_async(self, chat_id: int, text: str) -> CommandResult:
+        return await asyncio.to_thread(self._run_command, chat_id, text)
 
     def runtime_config(self) -> AppConfig:
         return replace(self.config, codex_project_dir=self.project_service.project_dir)
@@ -205,9 +227,8 @@ class BotHandlers:
         chat_id = self.get_chat_id(update)
         if chat_id is None:
             return
-        self.chat_store.reset_chat(chat_id)
-        self.chat_reasoning_overrides.pop(chat_id, None)
-        await reply_text_with_retry(update, "已新建对话并清空上下文。")
+        result = await self._run_command_async(chat_id, "/new")
+        await reply_text_with_retry(update, result.reply_text)
 
     async def skills(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
@@ -217,16 +238,8 @@ class BotHandlers:
         chat_id = self.get_chat_id(update)
         if chat_id is None:
             return
-        skills_list = list_available_skills()
-        if not skills_list:
-            reply = "当前未发现可用 skills。"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, "/skills", reply)
-            return
-        lines = ["可用 skills："] + [f"- {name}" for name in skills_list]
-        reply = "\n".join(lines)
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, "/skills", reply)
+        result = await self._run_command_async(chat_id, "/skills")
+        await reply_text_with_retry(update, result.reply_text)
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
@@ -237,32 +250,10 @@ class BotHandlers:
         if chat_id is None:
             return
         try:
-            runtime_info = await asyncio.to_thread(
-                get_codex_runtime_info, self.runtime_config()
-            )
+            result = await self._run_command_async(chat_id, "/status")
         except Exception as exc:
-            reply = f"状态检查失败：{exc}"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, "/status", reply)
-            return
-
-        usage = self.chat_store.usage_stats.get(chat_id) or {}
-        default_effort = normalize_reasoning_effort(
-            runtime_info.get("reasoning_effort", "")
-        )
-        reasoning_override = normalize_reasoning_effort(
-            self.chat_reasoning_overrides.get(chat_id, "")
-        )
-        effective_effort = reasoning_override or default_effort
-        reply = self.render_status_text(
-            runtime_info=runtime_info,
-            usage=usage,
-            reasoning_override=reasoning_override,
-            effective_reasoning_effort=effective_effort,
-        )
-
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, "/status", reply)
+            result = CommandResult(handled=True, reply_text=f"状态检查失败：{exc}")
+        await reply_text_with_retry(update, result.reply_text)
 
     def render_status_text(
         self,
@@ -271,49 +262,12 @@ class BotHandlers:
         reasoning_override: str = "",
         effective_reasoning_effort: str = "",
     ) -> str:
-        health = self.polling_health.snapshot(now=time.monotonic())
-        quota = runtime_info.get("quota") or {}
-        if quota:
-            account_quota_text = (
-                "账号额度快照：\n"
-                f"- 主窗口({quota.get('primary_window_minutes')}m)："
-                f"已用={quota.get('primary_used_percent')}%，"
-                f"剩余={quota.get('primary_remaining_percent')}%，"
-                f"重置={quota.get('primary_resets_at_local') or quota.get('primary_resets_at')}\n"
-                f"- 周窗口({quota.get('secondary_window_minutes')}m)："
-                f"已用={quota.get('secondary_used_percent')}%，"
-                f"剩余={quota.get('secondary_remaining_percent')}%，"
-                f"重置={quota.get('secondary_resets_at_local') or quota.get('secondary_resets_at')}\n"
-                f"- 快照时间：{quota.get('source_timestamp_local') or quota.get('source_timestamp') or 'unknown'}"
-            )
-        else:
-            account_quota_text = (
-                "账号额度快照：\n"
-                "- 未找到可用额度快照（尚无会话文件或会话未产出 token_count）"
-            )
-        return (
-            "当前会话状态：\n"
-            "令牌用量：\n"
-            f"- 最近一次：输入={usage.get('last_input_tokens', 0)}，"
-            f"缓存={usage.get('last_cached_input_tokens', 0)}，"
-            f"输出={usage.get('last_output_tokens', 0)}\n"
-            f"- 累计：输入={usage.get('total_input_tokens', 0)}，"
-            f"缓存={usage.get('total_cached_input_tokens', 0)}，"
-            f"输出={usage.get('total_output_tokens', 0)}\n"
-            "计划与模型：\n"
-            f"- 账号状态：{runtime_info.get('login') or 'unknown'}\n"
-            f"- 模型：{runtime_info.get('model')}\n"
-            f"- CLI 版本：{runtime_info.get('version') or 'unknown'}\n"
-            "推理等级：\n"
-            f"- 默认：{runtime_info.get('reasoning_effort') or 'default'}\n"
-            f"- 会话覆盖：{reasoning_override or '(none)'}\n"
-            f"- 当前生效：{effective_reasoning_effort or 'default'}\n"
-            f"{account_quota_text}\n"
-            "轮询健康：\n"
-            f"- 状态={health.get('state')}\n"
-            f"- 连续网络错误={health.get('consecutive_network_errors', 0)}\n"
-            f"- 窗口内重启次数={health.get('restarts_in_window', 0)}\n"
-            f"- 最近事件={health.get('last_event') or 'none'}"
+        return render_status_text(
+            runtime_info=runtime_info,
+            usage=usage,
+            health=self.polling_health.snapshot(now=time.monotonic()),
+            reasoning_override=reasoning_override,
+            effective_reasoning_effort=effective_reasoning_effort,
         )
 
     async def setreasoning(
@@ -327,8 +281,7 @@ class BotHandlers:
         if chat_id is None:
             return
         if not context.args:
-            current = self.chat_reasoning_overrides.get(chat_id)
-            default = self.config.codex_reasoning_effort or "default"
+            result = await self._run_command_async(chat_id, "/setreasoning")
             options = ["none", "minimal", "low", "medium", "high", "xhigh", "default"]
             rows = [
                 [
@@ -339,51 +292,15 @@ class BotHandlers:
                 for option in options
             ]
             reply_markup = InlineKeyboardMarkup(rows)
-            reply = (
-                "用法：/setreasoning <none|minimal|low|medium|high|xhigh|default>\n"
-                f"当前会话覆盖：{current or '(none)'}\n"
-                f"全局默认：{default}"
+            await reply_text_with_retry(
+                update, result.reply_text, reply_markup=reply_markup
             )
-            await reply_text_with_retry(update, reply, reply_markup=reply_markup)
-            self.chat_store.append_command_history(chat_id, "/setreasoning", reply)
             return
 
-        value = (context.args[0] or "").strip().lower()
-        command = f"/setreasoning {' '.join(context.args)}"
-        if value == "default":
-            try:
-                self.project_service.set_default_reasoning_effort("")
-                self.config = replace(self.config, codex_reasoning_effort="")
-                self.chat_reasoning_overrides.pop(chat_id, None)
-            except Exception as exc:
-                reply = f"设置失败：写入 .env 失败：{exc}"
-                await reply_text_with_retry(update, reply)
-                self.chat_store.append_command_history(chat_id, command, reply)
-                return
-            reply = "已清除会话推理等级覆盖，并清空 .env 默认推理等级（default）。"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-
-        normalized = normalize_reasoning_effort(value)
-        if not normalized:
-            reply = "无效推理等级。可选：none、minimal、low、medium、high、xhigh、default。"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-
-        try:
-            self.project_service.set_default_reasoning_effort(normalized)
-            self.config = replace(self.config, codex_reasoning_effort=normalized)
-            self.chat_reasoning_overrides[chat_id] = normalized
-        except Exception as exc:
-            reply = f"设置失败：写入 .env 失败：{exc}"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-        reply = f"已设置当前会话推理等级：{normalized}（并已写入 .env 作为全局默认）"
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, command, reply)
+        result = await self._run_command_async(
+            chat_id, f"/setreasoning {' '.join(context.args)}"
+        )
+        await reply_text_with_retry(update, result.reply_text)
 
     async def on_reasoning_button(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -465,32 +382,14 @@ class BotHandlers:
         if chat_id is None:
             return
         if not context.args:
-            command = "/setproject"
-            reply = f"当前项目目录：{self.project_service.project_dir}\n用法：/setproject <目录路径>"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
+            result = await self._run_command_async(chat_id, "/setproject")
+            await reply_text_with_retry(update, result.reply_text)
             return
 
-        command = f"/setproject {' '.join(context.args)}"
-        try:
-            new_path, created, env_path = self.project_service.set_project_dir(
-                " ".join(context.args)
-            )
-        except ValueError as exc:
-            reply = str(exc)
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-        except Exception as exc:
-            reply = f"切换项目目录失败：{exc}"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-
-        action_text = "已创建并切换项目目录" if created else "已切换项目目录"
-        reply = f"{action_text}：{new_path}\n已同步写入：{env_path}"
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, command, reply)
+        result = await self._run_command_async(
+            chat_id, f"/setproject {' '.join(context.args)}"
+        )
+        await reply_text_with_retry(update, result.reply_text)
 
     async def models(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
@@ -510,12 +409,7 @@ class BotHandlers:
         has_allowed = bool(allowed_models)
         model_list = "、".join(allowed_models) if has_allowed else "(未配置 CODEX_ALLOWED_MODELS，支持直接设置任意模型名)"
         if not context.args:
-            command = "/models"
-            reply = (
-                "用法：/models <模型>\n"
-                f"当前模型：{current}\n"
-                f"可选模型：{model_list}"
-            )
+            result = await self._run_command_async(chat_id, "/models")
             reply_markup = None
             if has_allowed:
                 rows = [
@@ -527,30 +421,13 @@ class BotHandlers:
                     for model in allowed_models
                 ]
                 reply_markup = InlineKeyboardMarkup(rows)
-            await reply_text_with_retry(update, reply, reply_markup=reply_markup)
-            self.chat_store.append_command_history(chat_id, command, reply)
+            await reply_text_with_retry(
+                update, result.reply_text, reply_markup=reply_markup
+            )
             return
 
-        selected = (context.args[0] or "").strip().lower()
-        command = f"/models {' '.join(context.args)}"
-        if not selected:
-            reply = "模型名不能为空。用法：/models <模型>"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-
-        try:
-            self.project_service.set_default_model(selected)
-            self.config = replace(self.config, codex_model=selected)
-        except Exception as exc:
-            reply = f"设置失败：写入 .env 失败：{exc}"
-            await reply_text_with_retry(update, reply)
-            self.chat_store.append_command_history(chat_id, command, reply)
-            return
-
-        reply = f"已设置模型：{selected}（并已写入 .env 作为全局默认）"
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, command, reply)
+        result = await self._run_command_async(chat_id, f"/models {' '.join(context.args)}")
+        await reply_text_with_retry(update, result.reply_text)
 
     async def on_model_button(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -603,14 +480,8 @@ class BotHandlers:
         chat_id = self.get_chat_id(update)
         if chat_id is None:
             return
-        env_value = self.project_service.read_env_project_dir() or "(未配置)"
-        reply = (
-            f"当前运行目录：{self.project_service.project_dir}\n"
-            f".env 路径：{self.project_service.env_path}\n"
-            f".env 中 CODEX_PROJECT_DIR：{env_value}"
-        )
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, "/getproject", reply)
+        result = await self._run_command_async(chat_id, "/getproject")
+        await reply_text_with_retry(update, result.reply_text)
 
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
@@ -620,16 +491,8 @@ class BotHandlers:
         chat_id = self.get_chat_id(update)
         if chat_id is None:
             return
-        history_items = self.chat_store.histories.get(chat_id, [])
-        turns = len(history_items) // 2
-        reply = (
-            f"当前会话历史条目：{len(history_items)}\n"
-            f"约合轮次：{turns}\n"
-            f"保留上限轮次：{self.chat_store.max_turns}\n"
-            f"历史文件：{self.chat_store.history_file}"
-        )
-        await reply_text_with_retry(update, reply)
-        self.chat_store.append_command_history(chat_id, "/history", reply)
+        result = await self._run_command_async(chat_id, "/history")
+        await reply_text_with_retry(update, result.reply_text)
 
     async def post_init(self, app) -> None:
         if not self.wake_watchdog_task or self.wake_watchdog_task.done():

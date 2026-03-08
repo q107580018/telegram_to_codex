@@ -83,6 +83,7 @@ cp \
   "$ROOT_DIR/BotControlMain.swift" \
   "$ROOT_DIR/bot.py" \
   "$ROOT_DIR/bridge_core.py" \
+  "$ROOT_DIR/command_service.py" \
   "$ROOT_DIR/codex_client.py" \
   "$ROOT_DIR/config.py" \
   "$ROOT_DIR/env_store.py" \

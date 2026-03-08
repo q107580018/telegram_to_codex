@@ -157,22 +157,25 @@ FEISHU_APP_SECRET=xxx
 - 当前首版只支持私聊
 - 当前只处理文本消息输入
 - 当前只发送文本回复
+- 已支持 slash 命令：`/new`、`/skills`、`/status`、`/setproject`、`/setreasoning`、`/models`、`/getproject`、`/history`
+- 飞书中的 `/setreasoning` 与 `/models` 当前返回纯文本说明，不提供 Telegram 那样的可点击按钮
 - 已补充发送开始、发送成功、发送失败日志，便于排障
 
 ## 命令
 
-以下命令当前主要用于 Telegram 入口：
+以下命令同时适用于 Telegram 与飞书私聊入口，除非特别说明：
 
-- `/start`：开始
 - `/new`：新建对话，清空上下文
+- `/skills`：查看可用 skills
 - `/status`：查看 Codex 状态、账号额度快照与轮询健康摘要
 - `/setproject <路径>`：切换项目目录，不存在会自动创建
 - `/setreasoning <none|minimal|low|medium|high|xhigh|default>`：设置当前会话推理等级
-- `/setreasoning`：返回可点击等级按钮
+- `/setreasoning`：查看当前推理等级与用法；Telegram 会返回可点击等级按钮，飞书返回纯文本
 - `/models`：查看可选模型与当前模型
 - `/models <模型>`：切换模型，并写入 `.env` 持久化
 - `/getproject`：查看当前运行目录和 `.env` 中目录配置
 - `/history`：查看当前会话历史信息
+- `/start`：开始，仅 Telegram 入口支持
 
 ## macOS 控制器 App
 
