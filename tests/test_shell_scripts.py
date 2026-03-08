@@ -41,6 +41,26 @@ class ShellScriptTests(unittest.TestCase):
         self.assertIn("bot.py", result.stdout)
         self.assertIn("feishu_bot.py", result.stdout)
 
+    def test_build_app_compiles_multi_file_swift_sources(self):
+        script = (ROOT / "build_app.sh").read_text(encoding="utf-8")
+        self.assertIn('"$ROOT_DIR/AppPlatform.swift"', script)
+        self.assertIn('"$ROOT_DIR/BotControlMac.swift"', script)
+        self.assertIn('"$ROOT_DIR/BotControlMain.swift"', script)
+
+    def test_build_app_syncs_platform_runtime_files(self):
+        script = (ROOT / "build_app.sh").read_text(encoding="utf-8")
+        for name in [
+            "feishu_bot.py",
+            "bridge_core.py",
+            "platform_messages.py",
+            "platform_registry.py",
+            "platforms.json",
+            "telegram_adapter.py",
+            "feishu_io.py",
+            "feishu_adapter.py",
+        ]:
+            self.assertIn(f'"$ROOT_DIR/{name}"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

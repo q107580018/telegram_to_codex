@@ -79,14 +79,24 @@ fi
 
 # 1) 同步 App 内置运行时脚本
 cp \
+  "$ROOT_DIR/AppPlatform.swift" \
+  "$ROOT_DIR/BotControlMain.swift" \
   "$ROOT_DIR/bot.py" \
+  "$ROOT_DIR/bridge_core.py" \
   "$ROOT_DIR/codex_client.py" \
   "$ROOT_DIR/config.py" \
   "$ROOT_DIR/env_store.py" \
   "$ROOT_DIR/chat_store.py" \
+  "$ROOT_DIR/feishu_adapter.py" \
+  "$ROOT_DIR/feishu_bot.py" \
+  "$ROOT_DIR/feishu_io.py" \
   "$ROOT_DIR/handlers.py" \
+  "$ROOT_DIR/platform_messages.py" \
+  "$ROOT_DIR/platform_registry.py" \
+  "$ROOT_DIR/platforms.json" \
   "$ROOT_DIR/polling_health.py" \
   "$ROOT_DIR/project_service.py" \
+  "$ROOT_DIR/telegram_adapter.py" \
   "$ROOT_DIR/telegram_io.py" \
   "$ROOT_DIR/skills.py" \
   "$ROOT_DIR/requirements.txt" \
@@ -94,7 +104,12 @@ cp \
   "$RUNTIME_PATH/"
 
 # 2) 重新编译 App 可执行文件
-swiftc "$ROOT_DIR/BotControlMac.swift" -o "$BIN_PATH" -framework AppKit
+swiftc \
+  "$ROOT_DIR/AppPlatform.swift" \
+  "$ROOT_DIR/BotControlMac.swift" \
+  "$ROOT_DIR/BotControlMain.swift" \
+  -o "$BIN_PATH" \
+  -framework AppKit
 if [[ -f "$LEGACY_BIN_PATH" ]]; then
   rm -f "$LEGACY_BIN_PATH"
 fi

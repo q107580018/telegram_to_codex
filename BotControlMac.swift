@@ -181,6 +181,7 @@ final class HoverButton: NSButton {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let appName = "CodexBridge"
+    private let selectedPlatformDefaultsKey = "SelectedPlatformID"
     private var didPromptFullDiskAccess = false
     private var didPromptCodexInstall = false
     private var shouldKeepBotRunning = false
@@ -189,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var workspaceObservers: [Any] = []
     private let defaultWindowSize = NSSize(width: 720, height: 420)
     private let minimumWindowSize = NSSize(width: 620, height: 360)
+    private var availablePlatforms: [AppPlatformDefinition] = defaultAppPlatforms()
+    private var currentPlatform: AppPlatformDefinition = defaultAppPlatforms()[0]
 
     private var window: NSWindow!
     private var logWindow: NSWindow?
@@ -198,6 +201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let statusSummaryMenuItem = NSMenuItem(title: "状态：准备中...", action: nil, keyEquivalent: "")
     private var toggleWindowMenuItem: NSMenuItem?
     private var toggleBotMenuItem: NSMenuItem?
+    private let titleLabel = NSTextField(labelWithString: "CodexBridge 控制器")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let platformSelector = NSPopUpButton(frame: .zero, pullsDown: false)
     private let statusDot = StatusDotView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
     private let statusLabel = NSTextField(labelWithString: "状态：准备中...")
     private let detailLabel = NSTextField(labelWithString: "")
@@ -217,12 +223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var pythonPath: String { runtimeDir + "/.venv/bin/python" }
-    private var botPath: String { runtimeDir + "/bot.py" }
-    private var pidPath: String { runtimeDir + "/bot.pid" }
     private var logPath: String { runtimeDir + "/bot.log" }
-    private var launchLogPath: String { runtimeDir + "/bot.launch.log" }
     private var envPath: String { runtimeDir + "/.env" }
     private var runtimeEnvExamplePath: String { runtimeDir + "/.env.example" }
+    private var runtimePlatformsPath: String { runtimeDir + "/platforms.json" }
     private var bundledEnvExamplePath: String? {
         guard let resourceURL = Bundle.main.resourceURL else {
             return nil
@@ -232,6 +236,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .appendingPathComponent(".env.example")
             .path
     }
+    private var bundledPlatformsPath: String? {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            return nil
+        }
+        return resourceURL
+            .appendingPathComponent("BotRuntime")
+            .appendingPathComponent("platforms.json")
+            .path
+    }
+    private var currentBotPath: String { botPath(for: currentPlatform) }
+    private var currentPidPath: String { pidPath(for: currentPlatform) }
+    private var currentLaunchLogPath: String { launchLogPath(for: currentPlatform) }
 
     private func resolvedEnvExamplePath() -> String? {
         let fm = FileManager.default
@@ -244,8 +260,84 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return nil
     }
 
+    private func loadAvailablePlatforms() -> [AppPlatformDefinition] {
+        let fm = FileManager.default
+        let candidates = [
+            runtimePlatformsPath,
+            bundledPlatformsPath,
+            FileManager.default.currentDirectoryPath + "/platforms.json",
+        ].compactMap { $0 }
+
+        for path in candidates where fm.fileExists(atPath: path) {
+            if let loaded = try? loadAppPlatforms(from: URL(fileURLWithPath: path)), !loaded.isEmpty {
+                return loaded
+            }
+        }
+        return defaultAppPlatforms()
+    }
+
+    private func restoreSelectedPlatform() {
+        availablePlatforms = loadAvailablePlatforms()
+        currentPlatform = resolveSelectedPlatform(
+            storedPlatformID: UserDefaults.standard.string(forKey: selectedPlatformDefaultsKey),
+            available: availablePlatforms
+        )
+    }
+
+    private func persistSelectedPlatform() {
+        UserDefaults.standard.set(currentPlatform.id, forKey: selectedPlatformDefaultsKey)
+    }
+
+    private func botPath(for platform: AppPlatformDefinition) -> String {
+        runtimeDir + "/" + platform.entryScript
+    }
+
+    private func pidPath(for platform: AppPlatformDefinition) -> String {
+        runtimeDir + "/" + platform.pidFile
+    }
+
+    private func launchLogPath(for platform: AppPlatformDefinition) -> String {
+        runtimeDir + "/" + platform.launchLogFile
+    }
+
+    private func currentEnvText() -> String {
+        (try? String(contentsOfFile: envPath, encoding: .utf8)) ?? ""
+    }
+
+    private func missingCurrentPlatformEnvKeys() -> [String] {
+        missingRequiredEnvKeys(in: currentEnvText(), for: currentPlatform)
+    }
+
+    private func refreshPlatformSelectorItems() {
+        platformSelector.removeAllItems()
+        platformSelector.addItems(withTitles: availablePlatforms.map(\.displayName))
+        if let index = availablePlatforms.firstIndex(where: { $0.id == currentPlatform.id }) {
+            platformSelector.selectItem(at: index)
+        }
+    }
+
+    private func refreshPlatformUI(shouldRefreshStatus: Bool = true) {
+        titleLabel.stringValue = "CodexBridge 控制器"
+        subtitleLabel.stringValue = "本地 Codex Runtime · \(currentPlatform.displayName) 控制面板"
+        window?.title = "CodexBridge · \(currentPlatform.displayName)"
+        primaryButton.setAccessibilityLabel("启动或停止 \(currentPlatform.displayName) 机器人")
+        if let button = statusItem?.button {
+            button.toolTip = "CodexBridge 菜单 · \(currentPlatform.displayName)"
+        }
+        if let logWindow {
+            logWindow.title = "\(currentPlatform.displayName) 日志"
+        }
+        updatePathLabels()
+        if shouldRefreshStatus {
+            refreshStatus()
+        } else {
+            refreshStatusMenuItems()
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        restoreSelectedPlatform()
         setupMainMenu()
         setupStatusItem()
         buildUI()
@@ -257,6 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.global(qos: .userInitiated).async {
             let result = self.bootstrapRuntime()
             DispatchQueue.main.async {
+                self.restoreSelectedPlatform()
+                self.refreshPlatformSelectorItems()
                 self.refreshStatus(message: result)
                 let missingCodex = result.hasPrefix("初始化失败：未检测到 codex 命令")
                 if missingCodex {
@@ -425,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         workspaceObservers.removeAll()
-        _ = stopBotCommand()
+        stopAllKnownBots()
     }
 
     private func setupPowerStateObservers() {
@@ -543,18 +637,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             rootStack.bottomAnchor.constraint(equalTo: card.bottomAnchor),
         ])
 
-        let title = NSTextField(labelWithString: "Telegram Bot 控制器")
-        title.font = NSFont.systemFont(ofSize: 31, weight: .bold)
-        title.textColor = .labelColor
+        titleLabel.font = NSFont.systemFont(ofSize: 31, weight: .bold)
+        titleLabel.textColor = .labelColor
 
-        let subtitle = NSTextField(labelWithString: "本地 Codex Runtime · Telegram 控制面板")
-        subtitle.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        subtitle.textColor = .secondaryLabelColor
-        let titleStack = NSStackView(views: [title, subtitle])
+        subtitleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        subtitleLabel.textColor = .secondaryLabelColor
+        let titleStack = NSStackView(views: [titleLabel, subtitleLabel])
         titleStack.orientation = .vertical
         titleStack.spacing = 4
         titleStack.alignment = .leading
-        rootStack.addArrangedSubview(titleStack)
+        let titleRow = NSStackView()
+        titleRow.orientation = .horizontal
+        titleRow.alignment = .top
+        titleRow.distribution = .fill
+        titleRow.spacing = 18
+        titleRow.translatesAutoresizingMaskIntoConstraints = false
+        titleRow.addArrangedSubview(titleStack)
+
+        let platformPanel = NSStackView()
+        platformPanel.orientation = .vertical
+        platformPanel.alignment = .leading
+        platformPanel.spacing = 6
+
+        let platformCaption = NSTextField(labelWithString: "当前平台")
+        platformCaption.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        platformCaption.textColor = .tertiaryLabelColor
+        platformPanel.addArrangedSubview(platformCaption)
+
+        platformSelector.translatesAutoresizingMaskIntoConstraints = false
+        platformSelector.target = self
+        platformSelector.action = #selector(platformSelectionChanged)
+        refreshPlatformSelectorItems()
+        platformSelector.setContentCompressionResistancePriority(.required, for: .horizontal)
+        platformPanel.addArrangedSubview(platformSelector)
+        NSLayoutConstraint.activate([
+            platformSelector.widthAnchor.constraint(equalToConstant: 160),
+        ])
+
+        titleRow.addArrangedSubview(platformPanel)
+        rootStack.addArrangedSubview(titleRow)
+        titleRow.widthAnchor.constraint(equalTo: rootStack.widthAnchor, constant: -48).isActive = true
 
         let statusPanel = makePanel()
         let statusStack = NSStackView()
@@ -681,7 +803,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         footer.lineBreakMode = .byTruncatingTail
         rootStack.addArrangedSubview(footer)
 
-        updatePathLabels()
+        refreshPlatformUI(shouldRefreshStatus: false)
         statusDot.setAccessibilityLabel("机器人状态指示")
 
         window.makeKeyAndOrderFront(nil)
@@ -769,11 +891,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     ) {
         let running = runningOverride ?? isBotRunning()
         if let statusTextOverride, !statusTextOverride.isEmpty {
-            statusSummaryMenuItem.title = "状态：\(statusTextOverride)"
+            statusSummaryMenuItem.title = "\(currentPlatform.displayName)：\(statusTextOverride)"
         } else {
-            statusSummaryMenuItem.title = running ? "状态：运行中" : "状态：已停止"
+            statusSummaryMenuItem.title = running
+                ? "\(currentPlatform.displayName)：运行中"
+                : "\(currentPlatform.displayName)：已停止"
         }
-        toggleBotMenuItem?.title = running ? "停止机器人" : "启动机器人"
+        toggleBotMenuItem?.title = menuBotActionTitle(isRunning: running)
         toggleWindowMenuItem?.title = isMainWindowVisible ? "隐藏主窗口" : "显示主窗口"
     }
 
@@ -783,6 +907,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             showMainWindow()
         }
+    }
+
+    @objc private func platformSelectionChanged() {
+        let index = platformSelector.indexOfSelectedItem
+        guard availablePlatforms.indices.contains(index) else {
+            return
+        }
+        currentPlatform = availablePlatforms[index]
+        persistSelectedPlatform()
+        refreshPlatformUI()
     }
 
     @objc private func toggleBotFromMenuBar() {
@@ -953,7 +1087,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         updatePathLabels()
         let running = isBotRunning()
-        let uiRunning = primaryButton.title == "停止"
+        let uiRunning = primaryButton.title.hasPrefix("停止")
         if running == uiRunning {
             return
         }
@@ -1012,7 +1146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 backing: .buffered,
                 defer: false
             )
-            win.title = "Bot 日志"
+            win.title = "\(currentPlatform.displayName) 日志"
             win.isReleasedWhenClosed = false
             win.center()
 
@@ -1119,28 +1253,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func setPendingUI(_ text: String) {
         statusDot.setColor(.systemOrange)
-        statusLabel.stringValue = "状态：\(text)"
-        detailLabel.stringValue = text
+        statusLabel.stringValue = "状态：\(currentPlatform.displayName) \(text)"
+        detailLabel.stringValue = "\(currentPlatform.displayName) · \(text)"
         updatePathLabels()
         refreshStatusMenuItems(statusTextOverride: text)
     }
 
     private func refreshStatus(runningOverride: Bool? = nil, message: String? = nil) {
         let running = runningOverride ?? isBotRunning()
+        shouldKeepBotRunning = running
         if running {
             statusDot.setColor(.systemGreen)
-            statusLabel.stringValue = "状态：运行中"
-            primaryButton.title = "停止"
+            statusLabel.stringValue = "状态：\(currentPlatform.displayName) 运行中"
+            primaryButton.title = primaryBotActionTitle(isRunning: true)
         } else {
             statusDot.setColor(.systemRed)
-            statusLabel.stringValue = "状态：已停止"
-            primaryButton.title = "启动"
+            statusLabel.stringValue = "状态：\(currentPlatform.displayName) 已停止"
+            primaryButton.title = primaryBotActionTitle(isRunning: false)
         }
 
         if let message, !message.isEmpty {
             detailLabel.stringValue = message
         } else {
-            detailLabel.stringValue = "运行环境：App 内置"
+            detailLabel.stringValue = "运行环境：App 内置 · 当前平台：\(currentPlatform.displayName)"
         }
         updatePathLabels()
         refreshStatusMenuItems(runningOverride: running)
@@ -1163,14 +1298,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func friendlyStartFailureReason() -> String {
-        let token = readEnvValue(for: "TELEGRAM_BOT_TOKEN")?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if token.isEmpty {
-            return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN），请先在配置中填写。"
+        let missingKeys = missingCurrentPlatformEnvKeys()
+        if !missingKeys.isEmpty {
+            let joined = missingKeys.joined(separator: "、")
+            return "缺少 \(currentPlatform.displayName) 配置（\(joined)），请先在配置中填写。"
         }
 
         guard let raw = readLastLaunchErrorLine(), !raw.isEmpty else {
-            return "请查看启动日志（bot.launch.log）。"
+            return "请查看启动日志（\(currentPlatform.launchLogFile)）。"
         }
         return mapTechnicalStartErrorToFriendly(raw)
     }
@@ -1180,21 +1315,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if lowered.contains("__bc_bot_exit__") {
             return "bot 进程启动后立即退出（\(raw)），请查看启动日志定位根因。"
         }
-        if lowered.contains("missing telegram_bot_token") {
-            return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN）。"
-        }
-        if lowered.contains("invalidtoken") || lowered.contains("unauthorized") {
-            return "Telegram Bot Token 无效，请检查是否填错。"
-        }
-        if lowered.contains("conflict: terminated by other getupdates request") {
-            return "检测到同一 Token 有其他机器人实例在轮询，请先关闭其它实例。"
-        }
-        if lowered.contains("ssl_error_syscall")
-            || lowered.contains("remoteprotocolerror")
-            || lowered.contains("connecterror")
-            || lowered.contains("proxyerror")
-        {
-            return "网络或代理连接失败，请检查代理配置（TELEGRAM_PROXY_URL）和代理软件状态。"
+        if currentPlatform.id == "telegram" {
+            if lowered.contains("missing telegram_bot_token") {
+                return "缺少 Telegram Bot Token（TELEGRAM_BOT_TOKEN）。"
+            }
+            if lowered.contains("invalidtoken") || lowered.contains("unauthorized") {
+                return "Telegram Bot Token 无效，请检查是否填错。"
+            }
+            if lowered.contains("conflict: terminated by other getupdates request") {
+                return "检测到同一 Token 有其他机器人实例在轮询，请先关闭其它实例。"
+            }
+            if lowered.contains("ssl_error_syscall")
+                || lowered.contains("remoteprotocolerror")
+                || lowered.contains("connecterror")
+                || lowered.contains("proxyerror")
+            {
+                return "网络或代理连接失败，请检查代理配置（TELEGRAM_PROXY_URL）和代理软件状态。"
+            }
+        } else if currentPlatform.id == "feishu" {
+            if lowered.contains("feishu_app_id") || lowered.contains("feishu_app_secret") {
+                return "缺少飞书应用凭证（FEISHU_APP_ID / FEISHU_APP_SECRET）。"
+            }
+            if lowered.contains("websocket")
+                || lowered.contains("handshake")
+                || lowered.contains("connection")
+                || lowered.contains("timeout")
+            {
+                return "飞书长连接初始化失败，请检查网络和应用配置。"
+            }
+            if lowered.contains("image upload") || lowered.contains("image_key") {
+                return "飞书图片上传失败，请检查图片格式、权限与网络。"
+            }
         }
         if lowered.contains("no such file or directory") && lowered.contains("codex") {
             return "找不到 codex 命令，请安装 codex 或修正 CODEX_BIN。"
@@ -1211,7 +1362,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func readLastLaunchErrorLine() -> String? {
-        guard let content = try? String(contentsOfFile: launchLogPath, encoding: .utf8) else {
+        guard let content = try? String(contentsOfFile: currentLaunchLogPath, encoding: .utf8) else {
             return nil
         }
         let lines = content.components(separatedBy: .newlines)
@@ -1228,19 +1379,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func readLogTextForDisplay() -> String {
         let botText = (try? String(contentsOfFile: logPath, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let launchText = (try? String(contentsOfFile: launchLogPath, encoding: .utf8))?
+        let launchText = (try? String(contentsOfFile: currentLaunchLogPath, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let launchLogName = currentPlatform.launchLogFile
 
         if !botText.isEmpty, !launchText.isEmpty {
-            return "[运行日志 bot.log]\n\(botText)\n\n[启动日志 bot.launch.log]\n\(launchText)\n"
+            return "[运行日志 bot.log]\n\(botText)\n\n[启动日志 \(launchLogName)]\n\(launchText)\n"
         }
         if !botText.isEmpty {
             return botText + "\n"
         }
         if !launchText.isEmpty {
-            return "[启动日志 bot.launch.log]\n\(launchText)\n"
+            return "[启动日志 \(launchLogName)]\n\(launchText)\n"
         }
-        return "暂无日志（尚未启动）\n日志路径：\(logPath)\n启动日志路径：\(launchLogPath)"
+        return "暂无日志（尚未启动）\n日志路径：\(logPath)\n启动日志路径：\(currentLaunchLogPath)"
     }
 
     private func extractEnvKey(from line: String, includeCommented: Bool) -> String? {
@@ -1413,6 +1565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let bundleRuntime = resourceURL.appendingPathComponent("BotRuntime")
         let requiredRuntimeFiles = [
             "bot.py",
+            "feishu_bot.py",
             "requirements.txt",
             ".env.example",
             "config.py",
@@ -1422,7 +1575,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "polling_health.py",
             "codex_client.py",
             "project_service.py",
+            "bridge_core.py",
+            "platform_messages.py",
+            "platform_registry.py",
+            "platforms.json",
             "telegram_io.py",
+            "telegram_adapter.py",
+            "feishu_io.py",
+            "feishu_adapter.py",
             "skills.py",
         ]
         let optionalRuntimeFiles = [
@@ -1532,7 +1692,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func ensureRuntimeLogFiles() {
         let fm = FileManager.default
-        for path in [logPath, launchLogPath] {
+        let launchLogs = availablePlatforms.map { launchLogPath(for: $0) }
+        for path in [logPath] + launchLogs {
             if fm.fileExists(atPath: path) {
                 continue
             }
@@ -1575,19 +1736,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func startBotCommand() -> String {
+        stopAllKnownBots(except: currentPlatform.id)
+        return startBotCommand(for: currentPlatform)
+    }
+
+    private func startBotCommand(for platform: AppPlatformDefinition) -> String {
+        let botPath = botPath(for: platform)
+        let pidPath = pidPath(for: platform)
+        let launchLogPath = launchLogPath(for: platform)
         let runner = "cd \(q(runtimeDir)); env -u ALL_PROXY -u all_proxy BOT_LOG_TO_STDOUT=0 \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1; code=$?; ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"__BC_BOT_EXIT__ code=$code ts=$ts\" >> \(q(launchLogPath))"
-        let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-start] ts=$ts python=\(pythonPath) bot=\(botPath)\" >> \(q(launchLogPath)); if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; nohup /bin/zsh -lc \(q(runner)) >/dev/null 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); started=0; for _ in 1 2 3 4 5 6 7 8 9 10; do if ps -p \"$newpid\" >/dev/null 2>&1; then started=1; break; fi; sleep 0.1; done; if [ \"$started\" = \"1\" ]; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 20 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 20 \(q(logPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
+        let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-start] ts=$ts python=\(pythonPath) bot=\(botPath) platform=\(platform.id)\" >> \(q(launchLogPath)); if [ -f \(q(pidPath)) ]; then oldpid=$(cat \(q(pidPath)) 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; nohup /bin/zsh -lc \(q(runner)) >/dev/null 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); started=0; for _ in 1 2 3 4 5 6 7 8 9 10; do if ps -p \"$newpid\" >/dev/null 2>&1; then started=1; break; fi; sleep 0.1; done; if [ \"$started\" = \"1\" ]; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 20 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 20 \(q(logPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func stopBotCommand() -> String {
-        let cmd = "cd \(q(runtimeDir)) && ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-stop] ts=$ts\" >> \(q(launchLogPath)); if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then kill \"$pid\" >/dev/null 2>&1 || true; fi; fi; pkill -TERM -f \(q(botPath)) >/dev/null 2>&1 || true; for _ in 1 2 3 4 5 6 7 8 9 10; do if ! pgrep -f \(q(botPath)) >/dev/null 2>&1; then break; fi; sleep 0.1; done; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then pkill -9 -f \(q(botPath)) >/dev/null 2>&1 || true; echo \"[bc-stop] forced_kill=1\" >> \(q(launchLogPath)); else echo \"[bc-stop] forced_kill=0\" >> \(q(launchLogPath)); fi; rm -f \(q(pidPath)); echo stopped"
+        stopBotCommand(for: currentPlatform)
+    }
+
+    private func stopBotCommand(for platform: AppPlatformDefinition) -> String {
+        let botPath = botPath(for: platform)
+        let pidPath = pidPath(for: platform)
+        let launchLogPath = launchLogPath(for: platform)
+        let cmd = "cd \(q(runtimeDir)) && ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-stop] ts=$ts platform=\(platform.id)\" >> \(q(launchLogPath)); if [ -f \(q(pidPath)) ]; then pid=$(cat \(q(pidPath)) 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then kill \"$pid\" >/dev/null 2>&1 || true; fi; fi; pkill -TERM -f \(q(botPath)) >/dev/null 2>&1 || true; for _ in 1 2 3 4 5 6 7 8 9 10; do if ! pgrep -f \(q(botPath)) >/dev/null 2>&1; then break; fi; sleep 0.1; done; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then pkill -9 -f \(q(botPath)) >/dev/null 2>&1 || true; echo \"[bc-stop] forced_kill=1\" >> \(q(launchLogPath)); else echo \"[bc-stop] forced_kill=0\" >> \(q(launchLogPath)); fi; rm -f \(q(pidPath)); echo stopped"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func stopAllKnownBots(except platformID: String? = nil) {
+        for platform in availablePlatforms where platform.id != platformID {
+            _ = stopBotCommand(for: platform)
+        }
+    }
+
     private func isBotRunning() -> Bool {
-        let cmd = "cd \(q(runtimeDir)) && if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then echo running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo running; else echo stopped; fi"
-        let out = runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
+        isBotRunning(for: currentPlatform)
+    }
+
+    private func isBotRunning(for platform: AppPlatformDefinition) -> Bool {
+        let botPath = botPath(for: platform)
+        let pidPath = pidPath(for: platform)
+        let pidCheckCmd = "cd \(q(runtimeDir)) && if [ -f \(q(pidPath)) ]; then pid=$(cat \(q(pidPath)) 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then ps -p \"$pid\" -o command= 2>/dev/null || true; fi; fi"
+        let pidCommand = runShell(pidCheckCmd).trimmingCharacters(in: .whitespacesAndNewlines)
+        if commandLineMatchesPlatformProcess(pidCommand, botPath: botPath) {
+            return true
+        }
+
+        let out = runShell("pgrep -f \(q(botPath)) >/dev/null 2>&1 && echo running || echo stopped")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return out == "running"
     }
 
@@ -1624,8 +1818,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
-
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
