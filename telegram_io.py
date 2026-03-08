@@ -10,7 +10,6 @@ from telegram import InlineKeyboardMarkup
 from telegram.error import NetworkError, TimedOut
 
 IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-PLAIN_MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 SUPPORTED_IMAGE_EXTS = {
     ".png",
     ".jpg",
@@ -62,10 +61,7 @@ def extract_image_sources(
     seen_remote: set[str] = set()
     had_image_markdown = False
 
-    matches = list(IMAGE_MARKDOWN_RE.finditer(text)) + list(
-        PLAIN_MARKDOWN_LINK_RE.finditer(text)
-    )
-    for match in matches:
+    for match in IMAGE_MARKDOWN_RE.finditer(text):
         had_image_markdown = True
         target_raw = (match.group(1) or "").strip()
         if not target_raw:

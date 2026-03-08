@@ -80,4 +80,5 @@ cp .env.example .env
 - 可通过 `.env` 的 `ALLOWED_USER_IDS` 限制可用用户（逗号分隔 Telegram user_id）。
 - 日志默认写入 `bot.log` 并自动轮转，避免文件无限增长（可通过 `BOT_LOG_*` 参数调整）。
 - 当 Codex 回复里包含 Markdown 图片（例如 `![截图](/绝对路径/demo.png)`）时，bot 会自动读取本地文件并以 Telegram 图片消息发送；同一张图在单条回复内会自动去重。
+- 只有 Markdown 图片语法 `![]()` 会触发发图；普通 Markdown 链接 `[]()` 只按文本链接处理，不会被当成图片来源。
 - 不需要 `OPENAI_API_KEY`，依赖本机 `codex` 命令的登录态。

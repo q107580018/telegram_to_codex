@@ -42,7 +42,7 @@ class TelegramIOTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(remote_urls, [])
             self.assertTrue(had_image_markdown)
 
-    def test_extract_image_sources_supports_plain_markdown_links(self):
+    def test_extract_image_sources_ignores_plain_markdown_links(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             jpg = Path(tmpdir) / "cat.jpg"
             jpg.write_bytes(b"jpg")
@@ -53,9 +53,9 @@ class TelegramIOTests(unittest.IsolatedAsyncioTestCase):
 
             local_paths, remote_urls, had_image_markdown = extract_image_sources(text)
 
-            self.assertEqual(local_paths, [str(jpg)])
-            self.assertEqual(remote_urls, ["https://example.com/a.png"])
-            self.assertTrue(had_image_markdown)
+            self.assertEqual(local_paths, [])
+            self.assertEqual(remote_urls, [])
+            self.assertFalse(had_image_markdown)
 
     def test_extract_local_image_paths_only_keeps_existing_local_images(self):
         with tempfile.TemporaryDirectory() as tmpdir:

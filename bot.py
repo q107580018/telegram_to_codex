@@ -31,6 +31,8 @@ SYSTEM_PROMPT = (
     "Answer clearly and concisely. Prefer actionable code-level guidance. "
     "When you want Telegram to send a local image file, always include a Markdown image "
     "reference with an absolute path, e.g. ![screenshot](/tmp/example.png). "
+    "Only Markdown image syntax starting with ![ triggers Telegram image sending. "
+    "A normal Markdown link like [text](url) is just a link and must not be used when you want Telegram to send an image. "
     "Do not return only a plain file path for images."
 )
 
