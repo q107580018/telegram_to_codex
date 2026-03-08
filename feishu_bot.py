@@ -8,11 +8,17 @@ import lark_oapi as lark
 from dotenv import load_dotenv
 
 from bot import CHAT_HISTORY_FILE, DEFAULT_MAX_TURNS, SYSTEM_PROMPT, setup_logging
-from bridge_core import BridgeCore, BridgeInboundMessage
+from bridge_core import BridgeCore
 from chat_store import ChatStore
 from codex_client import ask_codex_with_meta
 from config import load_config
-from feishu_io import FeishuPrivateTextEvent, parse_private_text_event, send_private_text
+from feishu_adapter import FeishuAdapter
+from feishu_io import (
+    FeishuPrivateTextEvent,
+    add_typing_reaction,
+    parse_private_text_event,
+    remove_typing_reaction,
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -58,25 +64,47 @@ def build_api_client(config):
 
 
 async def handle_private_text_event(
-    core: BridgeCore, client, event: FeishuPrivateTextEvent, logger: logging.Logger
+    core: BridgeCore,
+    client,
+    event: FeishuPrivateTextEvent,
+    logger: logging.Logger,
+    adapter: Optional[FeishuAdapter] = None,
 ) -> None:
+    reaction_id: Optional[str] = None
     try:
-        reply = await core.process_user_text(
-            BridgeInboundMessage(
-                platform="feishu",
-                chat_id=event.chat_id,
-                user_id=event.user_id,
-                text=event.text,
-            )
-        )
+        adapter = adapter or FeishuAdapter()
+        if event.message_id:
+            try:
+                reaction_result = await asyncio.to_thread(
+                    add_typing_reaction,
+                    client,
+                    event.message_id,
+                )
+                reaction_id = (reaction_result or {}).get("reaction_id") or None
+            except Exception as exc:
+                logger.warning(
+                    "飞书 typing reaction 更新失败：message_id=%s err=%s",
+                    event.message_id,
+                    exc,
+                )
+        outbound = await core.process_user_text(adapter.build_inbound_message(event))
         logger.info(
             "开始发送飞书消息：chat_id=%s reply_len=%s",
             event.chat_id,
-            len(reply.text),
+            len(outbound.text),
         )
-        send_result = await asyncio.to_thread(
-            send_private_text, client, event.chat_id, reply.text
+        send_results = await asyncio.to_thread(
+            adapter.send_outbound,
+            client,
+            event.chat_id,
+            outbound,
         )
+        if isinstance(send_results, dict):
+            send_result = send_results
+        elif isinstance(send_results, list) and send_results:
+            send_result = send_results[-1]
+        else:
+            send_result = {}
         logger.info(
             "飞书消息发送成功：chat_id=%s message_id=%s log_id=%s",
             event.chat_id,
@@ -86,6 +114,21 @@ async def handle_private_text_event(
     except Exception as exc:
         logger.exception("飞书消息发送失败：chat_id=%s err=%s", event.chat_id, exc)
         raise
+    finally:
+        if reaction_id and event.message_id:
+            try:
+                await asyncio.to_thread(
+                    remove_typing_reaction,
+                    client,
+                    event.message_id,
+                    reaction_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "飞书 typing reaction 更新失败：message_id=%s err=%s",
+                    event.message_id,
+                    exc,
+                )
 
 
 def build_event_handler(core: BridgeCore, client_ref: dict, logger: logging.Logger):

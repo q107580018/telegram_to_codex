@@ -1,0 +1,29 @@
+{
+  "platforms": [
+    {
+      "id": "telegram",
+      "display_name": "Telegram",
+      "entry_script": "bot.py",
+      "required_env_keys": [
+        "TELEGRAM_BOT_TOKEN"
+      ],
+      "pid_file": "telegram.pid",
+      "launch_log_file": "telegram.launch.log",
+      "supports_images": true,
+      "supports_commands": true
+    },
+    {
+      "id": "feishu",
+      "display_name": "Feishu",
+      "entry_script": "feishu_bot.py",
+      "required_env_keys": [
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET"
+      ],
+      "pid_file": "feishu.pid",
+      "launch_log_file": "feishu.launch.log",
+      "supports_images": true,
+      "supports_commands": false
+    }
+  ]
+}

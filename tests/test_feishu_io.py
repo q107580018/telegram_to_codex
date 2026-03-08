@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from feishu_io import parse_private_text_event, send_private_text
+from feishu_io import parse_private_text_event, send_private_image, send_private_text
 
 
 class FeishuIOTests(unittest.TestCase):
@@ -81,6 +81,32 @@ class FeishuIOTests(unittest.TestCase):
 
         self.assertEqual(result["message_id"], "om_123")
         self.assertEqual(result["log_id"], "log123")
+
+    def test_send_private_image_uploads_then_sends_message(self):
+        message_response = SimpleNamespace(
+            success=lambda: True,
+            code=0,
+            msg="ok",
+            get_log_id=lambda: "log456",
+            data=SimpleNamespace(message_id="om_img_123"),
+        )
+        client = SimpleNamespace(
+            im=SimpleNamespace(
+                v1=SimpleNamespace(
+                    message=SimpleNamespace(create=lambda _req: message_response)
+                )
+            )
+        )
+
+        with (
+            patch("feishu_io.upload_image", return_value="img_key_123") as upload_mock,
+            patch("feishu_io.build_image_message_request", return_value=object()),
+        ):
+            result = send_private_image(client, "oc_123", "/tmp/demo.png")
+
+        upload_mock.assert_called_once_with(client, "/tmp/demo.png")
+        self.assertEqual(result["message_id"], "om_img_123")
+        self.assertEqual(result["log_id"], "log456")
 
 
 if __name__ == "__main__":

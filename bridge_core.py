@@ -1,27 +1,16 @@
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional, Union
+from typing import Awaitable, Callable, Optional
 
 from codex_client import build_prompt
+from platform_messages import (
+    ChatKey,
+    PlatformInboundMessage,
+    PlatformOutboundMessage,
+    build_outbound_parts,
+)
 
-ChatKey = Union[int, str]
 ReplyRequester = Callable[[str, Optional[str]], Awaitable[tuple[str, dict]]]
-
-
-@dataclass(frozen=True)
-class BridgeInboundMessage:
-    platform: str
-    chat_id: ChatKey
-    user_id: Union[int, str]
-    text: str
-    display_name: str = ""
-    reasoning_effort: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class BridgeReply:
-    text: str
-    meta: dict
-    history_key: ChatKey
+BridgeInboundMessage = PlatformInboundMessage
+BridgeReply = PlatformOutboundMessage
 
 
 class BridgeCore:
@@ -30,10 +19,12 @@ class BridgeCore:
         chat_store,
         system_prompt: str,
         request_reply: ReplyRequester,
+        resolve_asset_base_dir: Optional[Callable[[], Optional[str]]] = None,
     ):
         self.chat_store = chat_store
         self.system_prompt = system_prompt
         self.request_reply = request_reply
+        self.resolve_asset_base_dir = resolve_asset_base_dir
 
     @staticmethod
     def build_history_key(platform: str, chat_id: ChatKey) -> ChatKey:
@@ -53,8 +44,9 @@ class BridgeCore:
             history_key, usage if isinstance(usage, dict) else {}
         )
         self.chat_store.append_assistant_message(history_key, reply_text)
+        base_dir = self.resolve_asset_base_dir() if self.resolve_asset_base_dir else None
         return BridgeReply(
-            text=reply_text,
+            parts=build_outbound_parts(reply_text, base_dir=base_dir),
             meta=meta if isinstance(meta, dict) else {},
             history_key=history_key,
         )
