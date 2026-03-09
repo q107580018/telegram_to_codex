@@ -27,7 +27,7 @@ class FeishuAdapter:
     ) -> PlatformInboundMessage:
         return PlatformInboundMessage(
             platform=self.platform_id,
-            chat_id=event.chat_id,
+            chat_id=event.user_id,
             user_id=event.user_id,
             message_id=event.message_id,
             text=event.text,

@@ -12,7 +12,7 @@ from bot import CHAT_HISTORY_FILE, DEFAULT_MAX_TURNS, SYSTEM_PROMPT, setup_loggi
 from bridge_core import BridgeCore
 from chat_store import ChatStore
 from command_service import CommandService
-from codex_client import ask_codex_with_meta
+from codex_client import ask_codex_with_meta, get_codex_runtime_info
 from config import load_config
 from feishu_adapter import FeishuAdapter
 from feishu_io import (
@@ -20,9 +20,12 @@ from feishu_io import (
     add_typing_reaction,
     parse_private_text_event,
     remove_typing_reaction,
+    send_private_text,
 )
+from feishu_menu import build_menu_help_text, resolve_menu_action
 from platform_messages import OutboundPart, PlatformOutboundMessage
 from project_service import ProjectService
+from skills import list_available_skills
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -105,18 +108,10 @@ def build_command_service(
         project_service=project_service,
         chat_store=chat_store,
         chat_reasoning_overrides=chat_reasoning_overrides,
-        get_runtime_info=lambda cfg: {
-            "login": "unknown",
-            "model": cfg.codex_model or "default",
-            "version": "unknown",
-            "reasoning_effort": cfg.codex_reasoning_effort or "default",
-        },
-        list_skills=lambda: [],
+        get_runtime_info=get_codex_runtime_info,
+        list_skills=list_available_skills,
         get_health_snapshot=lambda: {
-            "state": "healthy",
-            "consecutive_network_errors": 0,
-            "restarts_in_window": 0,
-            "last_event": "none",
+            "enabled": False,
         },
     )
 
@@ -162,7 +157,7 @@ async def handle_private_text_event(
             command_result = await asyncio.to_thread(
                 command_service.try_handle,
                 "feishu",
-                event.chat_id,
+                event.user_id,
                 event.text,
             )
             if command_result.handled:
@@ -196,6 +191,7 @@ async def handle_private_text_event(
                 )
                 return
         history_key = BridgeCore.build_history_key("feishu", event.chat_id)
+        history_key = BridgeCore.build_history_key("feishu", event.user_id)
         outbound = await core.process_user_text(
             adapter.build_inbound_message(
                 event,
@@ -245,6 +241,51 @@ async def handle_private_text_event(
                 )
 
 
+async def handle_bot_menu_event(
+    client,
+    menu_event,
+    logger: logging.Logger,
+    command_service: CommandService,
+) -> None:
+    event = getattr(menu_event, "event", None)
+    operator = getattr(event, "operator", None)
+    operator_id = getattr(operator, "operator_id", None)
+    open_id = (getattr(operator_id, "open_id", "") or "").strip()
+    event_key = (getattr(event, "event_key", "") or "").strip()
+    if not open_id or not event_key:
+        logger.info("忽略无效飞书菜单事件：open_id=%s event_key=%s", open_id, event_key)
+        return
+
+    action_type, value = resolve_menu_action(event_key)
+    if action_type == "command":
+        command_result = await asyncio.to_thread(
+            command_service.try_handle,
+            "feishu",
+            open_id,
+            value,
+        )
+        reply_text = command_result.reply_text
+    elif action_type == "help":
+        reply_text = value
+    else:
+        reply_text = f"未识别的菜单动作：{value}"
+
+    logger.info("开始发送飞书菜单响应：open_id=%s event_key=%s", open_id, event_key)
+    send_result = await asyncio.to_thread(
+        send_private_text,
+        client,
+        open_id,
+        reply_text,
+        receive_id_type="open_id",
+    )
+    logger.info(
+        "飞书菜单响应发送成功：open_id=%s message_id=%s log_id=%s",
+        open_id,
+        send_result.get("message_id", ""),
+        send_result.get("log_id", ""),
+    )
+
+
 def build_event_handler(
     core: BridgeCore,
     client_ref: dict,
@@ -286,9 +327,24 @@ def build_event_handler(
         except Exception:
             logger.exception("处理飞书消息事件失败")
 
+    def on_bot_menu(data) -> None:
+        try:
+            client = client_ref.get("client")
+            if client is None:
+                logger.warning("飞书客户端尚未就绪，忽略菜单事件。")
+                return
+            if command_service is None:
+                logger.warning("命令服务尚未就绪，忽略菜单事件。")
+                return
+            loop = asyncio.get_event_loop()
+            loop.create_task(handle_bot_menu_event(client, data, logger, command_service))
+        except Exception:
+            logger.exception("处理飞书菜单事件失败")
+
     return (
         lark.EventDispatcherHandler.builder("", "")
         .register_p2_im_message_receive_v1(on_message)
+        .register_p2_application_bot_menu_v6(on_bot_menu)
         .build()
     )
 

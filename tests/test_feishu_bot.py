@@ -6,11 +6,95 @@ from bridge_core import BridgeReply
 from command_service import CommandResult
 from config import AppConfig
 from feishu_io import FeishuPrivateTextEvent
-from feishu_bot import build_api_client, handle_private_text_event, main
+from feishu_bot import (
+    build_command_service,
+    build_api_client,
+    build_event_handler,
+    handle_bot_menu_event,
+    handle_private_text_event,
+    main,
+)
 from platform_messages import OutboundPart
 
 
 class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
+    def test_build_command_service_status_uses_real_runtime_info(self):
+        config = AppConfig(
+            telegram_bot_token="",
+            telegram_proxy_url="",
+            codex_model="gpt-5",
+            codex_reasoning_effort="medium",
+            codex_bin="codex",
+            codex_project_dir=".",
+            codex_timeout_sec=120,
+            codex_sandbox="danger-full-access",
+            allowed_user_ids_raw="",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret",
+        )
+        config_ref = {"value": config}
+
+        with patch(
+            "feishu_bot.get_codex_runtime_info",
+            return_value={
+                "login": "logged in",
+                "model": "gpt-5",
+                "version": "1.2.3",
+                "reasoning_effort": "medium",
+                "quota": {
+                    "primary_used_percent": 21.0,
+                    "primary_remaining_percent": 79.0,
+                    "primary_window_minutes": 300,
+                    "secondary_used_percent": 37.0,
+                    "secondary_remaining_percent": 63.0,
+                    "secondary_window_minutes": 10080,
+                },
+            },
+        ) as runtime_mock:
+            service = build_command_service(
+                config_ref=config_ref,
+                chat_store=MagicMock(),
+                chat_reasoning_overrides={},
+            )
+            result = service.try_handle("feishu", "ou_123", "/status")
+
+        runtime_mock.assert_called_once()
+        self.assertIn("账号状态：logged in", result.reply_text)
+        self.assertIn("CLI 版本：1.2.3", result.reply_text)
+        self.assertIn("主窗口(300m)：已用=21.0%", result.reply_text)
+        self.assertNotIn("轮询健康：", result.reply_text)
+
+    def test_build_command_service_skills_uses_real_skill_list(self):
+        config = AppConfig(
+            telegram_bot_token="",
+            telegram_proxy_url="",
+            codex_model="",
+            codex_reasoning_effort="",
+            codex_bin="codex",
+            codex_project_dir=".",
+            codex_timeout_sec=120,
+            codex_sandbox="danger-full-access",
+            allowed_user_ids_raw="",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret",
+        )
+        config_ref = {"value": config}
+
+        with patch(
+            "feishu_bot.list_available_skills",
+            return_value=["brainstorming", "systematic-debugging"],
+        ) as skills_mock:
+            service = build_command_service(
+                config_ref=config_ref,
+                chat_store=MagicMock(),
+                chat_reasoning_overrides={},
+            )
+            result = service.try_handle("feishu", "ou_123", "/skills")
+
+        skills_mock.assert_called_once()
+        self.assertIn("brainstorming", result.reply_text)
+        self.assertIn("systematic-debugging", result.reply_text)
+
     def test_build_api_client_uses_lark_openapi_client(self):
         config = AppConfig(
             telegram_bot_token="",
@@ -61,7 +145,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         core.process_user_text.return_value = BridgeReply(
             parts=(OutboundPart.text_part("hi"),),
             meta={},
-            history_key="feishu:oc_123",
+            history_key="feishu:ou_123",
         )
 
         async def passthrough_to_thread(func, *args, **kwargs):
@@ -109,7 +193,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         core.process_user_text.return_value = BridgeReply(
             parts=(OutboundPart.text_part("hi"),),
             meta={},
-            history_key="feishu:oc_123",
+            history_key="feishu:ou_123",
         )
 
         async def passthrough_to_thread(func, *args, **kwargs):
@@ -169,7 +253,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
                 command_service=command_service,
             )
 
-        command_service.try_handle.assert_called_once_with("feishu", "oc_123", "/new")
+        command_service.try_handle.assert_called_once_with("feishu", "ou_123", "/new")
         core.process_user_text.assert_not_called()
         adapter.send_outbound.assert_called_once()
         outbound = adapter.send_outbound.call_args.args[2]
@@ -191,7 +275,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         core.process_user_text.return_value = BridgeReply(
             parts=(OutboundPart.text_part("hi"),),
             meta={},
-            history_key="feishu:oc_123",
+            history_key="feishu:ou_123",
         )
 
         async def passthrough_to_thread(func, *args, **kwargs):
@@ -218,6 +302,58 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             "om_123",
             unittest.mock.ANY,
         )
+
+    async def test_handle_bot_menu_event_maps_event_key_to_command(self):
+        menu_event = SimpleNamespace(
+            event=SimpleNamespace(
+                event_key="cb_new_chat",
+                operator=SimpleNamespace(
+                    operator_id=SimpleNamespace(open_id="ou_123"),
+                    operator_name="Alice",
+                ),
+            )
+        )
+        logger = MagicMock()
+        command_service = MagicMock()
+        command_service.try_handle.return_value = CommandResult(
+            handled=True,
+            reply_text="已新建对话并清空上下文。",
+            command_text="/new",
+            store_history=False,
+        )
+
+        async def passthrough_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch(
+            "feishu_bot.asyncio.to_thread",
+            new=AsyncMock(side_effect=passthrough_to_thread),
+        ), patch("feishu_bot.send_private_text", return_value={"message_id": "om_out"}) as send_mock:
+            await handle_bot_menu_event(
+                client=object(),
+                menu_event=menu_event,
+                logger=logger,
+                command_service=command_service,
+            )
+
+        command_service.try_handle.assert_called_once_with("feishu", "ou_123", "/new")
+        send_mock.assert_called_once_with(
+            unittest.mock.ANY,
+            "ou_123",
+            "已新建对话并清空上下文。",
+            receive_id_type="open_id",
+        )
+
+    def test_build_event_handler_registers_bot_menu_callback(self):
+        builder = MagicMock()
+        builder.register_p2_im_message_receive_v1.return_value = builder
+        builder.register_p2_application_bot_menu_v6.return_value = builder
+        builder.build.return_value = object()
+
+        with patch("feishu_bot.lark.EventDispatcherHandler.builder", return_value=builder):
+            build_event_handler(core=object(), client_ref={}, logger=MagicMock())
+
+        builder.register_p2_application_bot_menu_v6.assert_called_once()
 
     async def test_main_starts_without_feishu_enabled_flag(self):
         config = AppConfig(

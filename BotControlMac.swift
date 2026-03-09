@@ -1584,6 +1584,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "telegram_adapter.py",
             "feishu_io.py",
             "feishu_adapter.py",
+            "feishu_menu.py",
             "skills.py",
         ]
         let optionalRuntimeFiles = [

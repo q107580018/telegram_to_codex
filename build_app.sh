@@ -91,6 +91,7 @@ cp \
   "$ROOT_DIR/feishu_adapter.py" \
   "$ROOT_DIR/feishu_bot.py" \
   "$ROOT_DIR/feishu_io.py" \
+  "$ROOT_DIR/feishu_menu.py" \
   "$ROOT_DIR/handlers.py" \
   "$ROOT_DIR/platform_messages.py" \
   "$ROOT_DIR/platform_registry.py" \

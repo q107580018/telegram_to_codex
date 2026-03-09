@@ -51,6 +51,7 @@ class ShellScriptTests(unittest.TestCase):
         script = (ROOT / "build_app.sh").read_text(encoding="utf-8")
         for name in [
             "command_service.py",
+            "feishu_menu.py",
             "feishu_bot.py",
             "bridge_core.py",
             "platform_messages.py",
@@ -66,6 +67,7 @@ class ShellScriptTests(unittest.TestCase):
         source = (ROOT / "BotControlMac.swift").read_text(encoding="utf-8")
         for name in [
             "command_service.py",
+            "feishu_menu.py",
             "feishu_bot.py",
             "handlers.py",
             "skills.py",

@@ -42,8 +42,13 @@ def parse_private_text_event(payload: dict) -> Optional[FeishuPrivateTextEvent]:
     )
 
 
-def build_text_message_request(chat_id: str, text: str):
-    return build_message_request(chat_id, "text", {"text": text})
+def build_text_message_request(receive_id: str, text: str, receive_id_type: str = "chat_id"):
+    return build_message_request(
+        receive_id,
+        "text",
+        {"text": text},
+        receive_id_type=receive_id_type,
+    )
 
 
 def build_image_message_request(chat_id: str, image_key: str):
@@ -79,15 +84,20 @@ def build_remove_reaction_request(message_id: str, reaction_id: str):
     )
 
 
-def build_message_request(chat_id: str, msg_type: str, content: dict):
+def build_message_request(
+    receive_id: str,
+    msg_type: str,
+    content: dict,
+    receive_id_type: str = "chat_id",
+):
     from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
     return (
         CreateMessageRequest.builder()
-        .receive_id_type("chat_id")
+        .receive_id_type(receive_id_type)
         .request_body(
             CreateMessageRequestBody.builder()
-            .receive_id(chat_id)
+            .receive_id(receive_id)
             .msg_type(msg_type)
             .content(json.dumps(content, ensure_ascii=False))
             .build()
@@ -96,8 +106,19 @@ def build_message_request(chat_id: str, msg_type: str, content: dict):
     )
 
 
-def send_private_text(client, chat_id: str, text: str) -> dict:
-    response = client.im.v1.message.create(build_text_message_request(chat_id, text))
+def send_private_text(
+    client,
+    receive_id: str,
+    text: str,
+    receive_id_type: str = "chat_id",
+) -> dict:
+    response = client.im.v1.message.create(
+        build_text_message_request(
+            receive_id,
+            text,
+            receive_id_type=receive_id_type,
+        )
+    )
     log_id = response.get_log_id() if hasattr(response, "get_log_id") else ""
     if not response.success():
         raise RuntimeError(

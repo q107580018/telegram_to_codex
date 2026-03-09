@@ -41,7 +41,7 @@ def render_status_text(
             "账号额度快照：\n"
             "- 未找到可用额度快照（尚无会话文件或会话未产出 token_count）"
         )
-    return (
+    text = (
         "当前会话状态：\n"
         "令牌用量：\n"
         f"- 最近一次：输入={usage.get('last_input_tokens', 0)}，"
@@ -58,12 +58,17 @@ def render_status_text(
         f"- 默认：{runtime_info.get('reasoning_effort') or 'default'}\n"
         f"- 会话覆盖：{reasoning_override or '(none)'}\n"
         f"- 当前生效：{effective_reasoning_effort or 'default'}\n"
-        f"{account_quota_text}\n"
-        "轮询健康：\n"
-        f"- 状态={health.get('state', 'healthy')}\n"
-        f"- 连续网络错误={health.get('consecutive_network_errors', 0)}\n"
-        f"- 窗口内重启次数={health.get('restarts_in_window', 0)}\n"
-        f"- 最近事件={health.get('last_event') or 'none'}"
+        f"{account_quota_text}"
+    )
+    if not health.get("enabled", True):
+        return text
+    return (
+        text
+        + "\n轮询健康：\n"
+        + f"- 状态={health.get('state', 'healthy')}\n"
+        + f"- 连续网络错误={health.get('consecutive_network_errors', 0)}\n"
+        + f"- 窗口内重启次数={health.get('restarts_in_window', 0)}\n"
+        + f"- 最近事件={health.get('last_event') or 'none'}"
     )
 
 

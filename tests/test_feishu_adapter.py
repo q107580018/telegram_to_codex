@@ -4,10 +4,28 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 from feishu_adapter import FeishuAdapter
+from feishu_io import FeishuPrivateTextEvent
 from platform_messages import OutboundPart, PlatformOutboundMessage
 
 
 class FeishuAdapterTests(unittest.TestCase):
+    def test_build_inbound_message_uses_user_id_as_history_key(self):
+        adapter = FeishuAdapter()
+
+        inbound = adapter.build_inbound_message(
+            FeishuPrivateTextEvent(
+                chat_id="oc_123",
+                user_id="ou_123",
+                message_id="om_123",
+                text="hello",
+            )
+        )
+
+        self.assertEqual(inbound.chat_id, "ou_123")
+        self.assertEqual(inbound.user_id, "ou_123")
+        self.assertEqual(inbound.message_id, "om_123")
+        self.assertEqual(inbound.text, "hello")
+
     def test_send_outbound_sends_text_then_image(self):
         adapter = FeishuAdapter()
         outbound = PlatformOutboundMessage(
