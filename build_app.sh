@@ -97,9 +97,12 @@ cp \
   "$ROOT_DIR/platform_registry.py" \
   "$ROOT_DIR/platforms.json" \
   "$ROOT_DIR/polling_health.py" \
+  "$ROOT_DIR/preview_driver.py" \
   "$ROOT_DIR/project_service.py" \
   "$ROOT_DIR/telegram_adapter.py" \
   "$ROOT_DIR/telegram_io.py" \
+  "$ROOT_DIR/telegram_preview.py" \
+  "$ROOT_DIR/telegram_update_state.py" \
   "$ROOT_DIR/skills.py" \
   "$ROOT_DIR/requirements.txt" \
   "$ROOT_DIR/.env.example" \

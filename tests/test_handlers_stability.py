@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from telegram.error import NetworkError, TimedOut
@@ -98,6 +99,59 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         with patch("handlers.asyncio.create_task", side_effect=consume_task) as create_task:
             await handlers.on_error(update=None, context=Ctx())
             create_task.assert_called_once()
+
+    async def test_handle_message_uses_preview_lifecycle_on_success(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        preview = SimpleNamespace(
+            start=AsyncMock(),
+            update=AsyncMock(),
+            finalize=AsyncMock(),
+            fail=AsyncMock(),
+            has_active_message=True,
+        )
+        handlers.preview_driver_factory = lambda update: preview
+        handlers.bridge_core.process_user_text = AsyncMock(
+            return_value=SimpleNamespace(text="done", parts=(), meta={}, history_key=1)
+        )
+        handlers.telegram_adapter.send_outbound = AsyncMock()
+
+        update = SimpleNamespace(
+            update_id=10,
+            effective_user=SimpleNamespace(id=1, full_name="User"),
+            effective_chat=SimpleNamespace(id=123),
+            message=SimpleNamespace(text="hello", message_id=9),
+        )
+
+        with (
+            patch("handlers.keep_typing", new=AsyncMock()),
+        ):
+            await handlers.handle_message(update, context=None)
+
+        preview.start.assert_awaited_once()
+        preview.update.assert_any_await("已收到，正在请求 Codex...")
+        preview.update.assert_any_await("Codex 已返回，正在发送回复...")
+        preview.finalize.assert_awaited_once()
+        preview.fail.assert_not_awaited()
+        handlers.telegram_adapter.send_outbound.assert_awaited_once()
+
+    async def test_handle_message_skips_duplicate_update(self):
+        handlers, tmp = build_handlers_for_test()
+        self.addCleanup(tmp.cleanup)
+
+        handlers.bridge_core.process_user_text = AsyncMock()
+        update = SimpleNamespace(
+            update_id=10,
+            effective_user=SimpleNamespace(id=1, full_name="User"),
+            effective_chat=SimpleNamespace(id=123),
+            message=SimpleNamespace(text="hello", message_id=9),
+        )
+        handlers.last_handled_update_id = 10
+
+        await handlers.handle_message(update, context=None)
+
+        handlers.bridge_core.process_user_text.assert_not_awaited()
 
     async def test_status_includes_polling_health_summary(self):
         handlers, tmp = build_handlers_for_test()
