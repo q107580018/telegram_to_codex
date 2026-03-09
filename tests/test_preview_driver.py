@@ -1,6 +1,6 @@
 import unittest
 
-from preview_driver import NullPreviewDriver
+from app.telegram.preview_driver import NullPreviewDriver
 
 
 class NullPreviewDriverTests(unittest.IsolatedAsyncioTestCase):

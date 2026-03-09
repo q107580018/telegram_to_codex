@@ -4,7 +4,7 @@ import Foundation
 struct AppPlatformSmokeTest {
     static func main() throws {
         let repoRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let defs = try loadAppPlatforms(from: repoRoot.appendingPathComponent("platforms.json"))
+        let defs = try loadAppPlatforms(from: repoRoot.appendingPathComponent("macos/platforms.json"))
 
         guard defs.contains(where: { $0.id == "telegram" }) else {
             fatalError("missing telegram")

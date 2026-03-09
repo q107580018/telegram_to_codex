@@ -3,8 +3,12 @@ import tempfile
 import urllib.request
 from urllib.parse import urlparse
 
-from feishu_io import FeishuPrivateTextEvent, send_private_image, send_private_text
-from platform_messages import PlatformInboundMessage, PlatformOutboundMessage
+from app.core.platform_messages import PlatformInboundMessage, PlatformOutboundMessage
+from app.feishu.feishu_io import (
+    FeishuPrivateTextEvent,
+    send_private_image,
+    send_private_text,
+)
 
 
 def download_remote_image(url: str) -> str:

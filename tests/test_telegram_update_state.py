@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from telegram_update_state import RecentUpdateDedupe, load_update_state, save_update_state
+from app.telegram.telegram_update_state import (
+    RecentUpdateDedupe,
+    load_update_state,
+    save_update_state,
+)
 
 
 class TelegramUpdateStateTests(unittest.TestCase):

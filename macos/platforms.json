@@ -3,7 +3,7 @@
     {
       "id": "telegram",
       "display_name": "Telegram",
-      "entry_script": "bot.py",
+      "entry_script": "app/telegram/bot.py",
       "required_env_keys": [
         "TELEGRAM_BOT_TOKEN"
       ],
@@ -15,7 +15,7 @@
     {
       "id": "feishu",
       "display_name": "Feishu",
-      "entry_script": "feishu_bot.py",
+      "entry_script": "app/feishu/feishu_bot.py",
       "required_env_keys": [
         "FEISHU_APP_ID",
         "FEISHU_APP_SECRET"

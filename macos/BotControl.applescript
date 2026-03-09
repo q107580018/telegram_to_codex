@@ -1,13 +1,13 @@
 property projectPath : ((POSIX path of (path to home folder)) & "Documents/BotControl")
 
 on isBotRunning()
-	set checkCmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then echo running; exit 0; fi; fi; if pgrep -f " & quoted form of (projectPath & "/bot.py") & " >/dev/null 2>&1; then echo running; else echo stopped; fi"
+	set checkCmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then pid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$pid\" ] && ps -p \"$pid\" >/dev/null 2>&1; then echo running; exit 0; fi; fi; if pgrep -f " & quoted form of (projectPath & "/app/telegram/bot.py") & " >/dev/null 2>&1; then echo running; else echo stopped; fi"
 	set stateText to do shell script checkCmd
 	return stateText is "running"
 end isBotRunning
 
 on startBot()
-	set cmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; BOT_LOG_TO_STDOUT=0 nohup " & quoted form of (projectPath & "/.venv/bin/python") & " " & quoted form of (projectPath & "/bot.py") & " > bot.launch.log 2>&1 & newpid=$!; echo $newpid > bot.pid; sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
+	set cmd to "cd " & quoted form of projectPath & " && if [ -f bot.pid ]; then oldpid=$(cat bot.pid 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; BOT_LOG_TO_STDOUT=0 nohup " & quoted form of (projectPath & "/.venv/bin/python") & " " & quoted form of (projectPath & "/app/telegram/bot.py") & " > bot.launch.log 2>&1 & newpid=$!; echo $newpid > bot.pid; sleep 1; if ps -p \"$newpid\" >/dev/null 2>&1; then echo started; else echo failed; fi"
 	return do shell script cmd
 end startBot
 

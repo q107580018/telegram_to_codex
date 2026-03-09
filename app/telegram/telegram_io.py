@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from telegram import Message, Update
 from telegram import InlineKeyboardMarkup
 from telegram.error import NetworkError, TimedOut
-from platform_messages import extract_image_sources, remove_markdown_images
+from app.core.platform_messages import extract_image_sources, remove_markdown_images
 
 
 async def reply_text_with_retry(

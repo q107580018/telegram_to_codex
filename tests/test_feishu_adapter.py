@@ -3,9 +3,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
-from feishu_adapter import FeishuAdapter
-from feishu_io import FeishuPrivateTextEvent
-from platform_messages import OutboundPart, PlatformOutboundMessage
+from app.feishu.feishu_adapter import FeishuAdapter
+from app.feishu.feishu_io import FeishuPrivateTextEvent
+from app.core.platform_messages import OutboundPart, PlatformOutboundMessage
 
 
 class FeishuAdapterTests(unittest.TestCase):
@@ -38,8 +38,8 @@ class FeishuAdapterTests(unittest.TestCase):
         )
 
         with (
-            patch("feishu_adapter.send_private_text", return_value={"message_id": "m1"}) as text_mock,
-            patch("feishu_adapter.send_private_image", return_value={"message_id": "m2"}) as image_mock,
+            patch("app.feishu.feishu_adapter.send_private_text", return_value={"message_id": "m1"}) as text_mock,
+            patch("app.feishu.feishu_adapter.send_private_image", return_value={"message_id": "m2"}) as image_mock,
         ):
             result = adapter.send_outbound(Mock(), "oc_123", outbound)
 
@@ -58,8 +58,8 @@ class FeishuAdapterTests(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "download.png"
             with (
-                patch("feishu_adapter.download_remote_image", return_value=str(target)) as download_mock,
-                patch("feishu_adapter.send_private_image", return_value={"message_id": "m1"}) as image_mock,
+                patch("app.feishu.feishu_adapter.download_remote_image", return_value=str(target)) as download_mock,
+                patch("app.feishu.feishu_adapter.send_private_image", return_value={"message_id": "m1"}) as image_mock,
             ):
                 adapter.send_outbound(Mock(), "oc_123", outbound)
 

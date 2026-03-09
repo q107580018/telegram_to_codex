@@ -1,6 +1,6 @@
 import os
 
-from env_store import read_env_key, upsert_env_key
+from app.config.env_store import read_env_key, upsert_env_key
 
 
 class ProjectService:

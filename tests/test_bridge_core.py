@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock
 
-from bridge_core import BridgeCore, BridgeInboundMessage
-from chat_store import ChatStore
+from app.core.bridge_core import BridgeCore, BridgeInboundMessage
+from app.config.chat_store import ChatStore
 
 
 class BridgeCoreTests(unittest.IsolatedAsyncioTestCase):

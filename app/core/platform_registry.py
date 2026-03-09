@@ -3,8 +3,8 @@ import os
 from dataclasses import dataclass
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PLATFORM_REGISTRY_PATH = os.path.join(BASE_DIR, "platforms.json")
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+PLATFORM_REGISTRY_PATH = os.path.join(REPO_ROOT, "macos", "platforms.json")
 
 
 @dataclass(frozen=True)

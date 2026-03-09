@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from config import AppConfig, normalize_reasoning_effort
+from app.config.config import AppConfig, normalize_reasoning_effort
 
 
 def build_prompt(system_prompt: str, history: list[dict]) -> str:
@@ -175,6 +175,22 @@ def _find_latest_session_file(codex_home: Path) -> Optional[Path]:
     return latest
 
 
+def _list_session_files_by_mtime(codex_home: Path) -> list[Path]:
+    sessions_dir = codex_home / "sessions"
+    if not sessions_dir.is_dir():
+        return []
+
+    files: list[tuple[float, Path]] = []
+    for path in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        files.append((mtime, path))
+    files.sort(key=lambda item: item[0], reverse=True)
+    return [path for _mtime, path in files]
+
+
 def _format_reset_time(epoch: Optional[int]) -> str:
     if epoch is None:
         return ""
@@ -199,11 +215,7 @@ def _format_iso_utc_to_local(ts: str) -> str:
         return ""
 
 
-def get_latest_account_quota_snapshot() -> dict:
-    session_file = _find_latest_session_file(_resolve_codex_home())
-    if not session_file:
-        return {}
-
+def _read_latest_quota_snapshot_from_session(session_file: Path) -> dict:
     latest_rate_limits = None
     latest_ts = ""
     try:
@@ -264,3 +276,12 @@ def get_latest_account_quota_snapshot() -> dict:
         "source_timestamp": latest_ts,
         "source_timestamp_local": _format_iso_utc_to_local(latest_ts),
     }
+
+
+def get_latest_account_quota_snapshot() -> dict:
+    codex_home = _resolve_codex_home()
+    for session_file in _list_session_files_by_mtime(codex_home):
+        snapshot = _read_latest_quota_snapshot_from_session(session_file)
+        if snapshot:
+            return snapshot
+    return {}

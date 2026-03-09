@@ -8,27 +8,27 @@ from typing import Optional
 import lark_oapi as lark
 from dotenv import load_dotenv
 
-from bot import CHAT_HISTORY_FILE, DEFAULT_MAX_TURNS, SYSTEM_PROMPT, setup_logging
-from bridge_core import BridgeCore
-from chat_store import ChatStore
-from command_service import CommandService
-from codex_client import ask_codex_with_meta, get_codex_runtime_info
-from config import load_config
-from feishu_adapter import FeishuAdapter
-from feishu_io import (
+from app.config.chat_store import ChatStore
+from app.config.config import load_config
+from app.config.project_service import ProjectService
+from app.core.bridge_core import BridgeCore
+from app.core.codex_client import ask_codex_with_meta, get_codex_runtime_info
+from app.core.command_service import CommandService
+from app.core.platform_messages import OutboundPart, PlatformOutboundMessage
+from app.core.skills import list_available_skills
+from app.feishu.feishu_adapter import FeishuAdapter
+from app.feishu.feishu_io import (
     FeishuPrivateTextEvent,
     add_typing_reaction,
     parse_private_text_event,
     remove_typing_reaction,
     send_private_text,
 )
-from feishu_menu import build_menu_help_text, resolve_menu_action
-from platform_messages import OutboundPart, PlatformOutboundMessage
-from project_service import ProjectService
-from skills import list_available_skills
+from app.feishu.feishu_menu import build_menu_help_text, resolve_menu_action
+from app.telegram.bot import CHAT_HISTORY_FILE, DEFAULT_MAX_TURNS, SYSTEM_PROMPT, setup_logging
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+load_dotenv(os.path.join(REPO_ROOT, ".env"))
 
 
 def _read_positive_int_env(name: str, default: int) -> int:
@@ -100,7 +100,7 @@ def build_command_service(
     def set_config(next_config):
         config_ref["value"] = next_config
 
-    project_service = FeishuProjectService(config_ref, os.path.join(BASE_DIR, ".env"))
+    project_service = FeishuProjectService(config_ref, os.path.join(REPO_ROOT, ".env"))
 
     return CommandService(
         config_getter=get_config,

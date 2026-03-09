@@ -1,7 +1,7 @@
 from typing import Awaitable, Callable, Optional
 
-from codex_client import build_prompt
-from platform_messages import (
+from app.core.codex_client import build_prompt
+from app.core.platform_messages import (
     ChatKey,
     PlatformInboundMessage,
     PlatformOutboundMessage,

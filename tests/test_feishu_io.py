@@ -2,7 +2,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from feishu_io import parse_private_text_event, send_private_image, send_private_text
+from app.feishu.feishu_io import (
+    parse_private_text_event,
+    send_private_image,
+    send_private_text,
+)
 
 
 class FeishuIOTests(unittest.TestCase):
@@ -56,7 +60,9 @@ class FeishuIOTests(unittest.TestCase):
             )
         )
 
-        with patch("feishu_io.build_text_message_request", return_value=object()):
+        with patch(
+            "app.feishu.feishu_io.build_text_message_request", return_value=object()
+        ):
             with self.assertRaisesRegex(RuntimeError, "feishu send failed"):
                 send_private_text(client, "oc_123", "hello")
 
@@ -76,7 +82,9 @@ class FeishuIOTests(unittest.TestCase):
             )
         )
 
-        with patch("feishu_io.build_text_message_request", return_value=object()):
+        with patch(
+            "app.feishu.feishu_io.build_text_message_request", return_value=object()
+        ):
             result = send_private_text(client, "oc_123", "hello")
 
         self.assertEqual(result["message_id"], "om_123")
@@ -99,8 +107,10 @@ class FeishuIOTests(unittest.TestCase):
         )
 
         with (
-            patch("feishu_io.upload_image", return_value="img_key_123") as upload_mock,
-            patch("feishu_io.build_image_message_request", return_value=object()),
+            patch(
+                "app.feishu.feishu_io.upload_image", return_value="img_key_123"
+            ) as upload_mock,
+            patch("app.feishu.feishu_io.build_image_message_request", return_value=object()),
         ):
             result = send_private_image(client, "oc_123", "/tmp/demo.png")
 

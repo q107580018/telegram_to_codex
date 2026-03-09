@@ -4,7 +4,7 @@ import Foundation
 struct AppPlatformSelectionTest {
     static func main() throws {
         let repoRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let defs = try loadAppPlatforms(from: repoRoot.appendingPathComponent("platforms.json"))
+        let defs = try loadAppPlatforms(from: repoRoot.appendingPathComponent("macos/platforms.json"))
         let selected = resolveSelectedPlatform(storedPlatformID: "feishu", available: defs)
 
         if selected.id != "feishu" {
@@ -22,15 +22,15 @@ struct AppPlatformSelectionTest {
         }
 
         if !commandLineMatchesPlatformProcess(
-            "/usr/bin/python3 /tmp/runtime/feishu_bot.py",
-            botPath: "/tmp/runtime/feishu_bot.py"
+            "/usr/bin/python3 /tmp/runtime/app/feishu/feishu_bot.py",
+            botPath: "/tmp/runtime/app/feishu/feishu_bot.py"
         ) {
             fatalError("expected feishu command line to match bot path")
         }
 
         if commandLineMatchesPlatformProcess(
             "/usr/bin/python3 /usr/bin/other.py",
-            botPath: "/tmp/runtime/feishu_bot.py"
+            botPath: "/tmp/runtime/app/feishu/feishu_bot.py"
         ) {
             fatalError("unexpected unrelated command line match")
         }

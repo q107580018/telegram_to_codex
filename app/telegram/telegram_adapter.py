@@ -1,10 +1,10 @@
 import logging
 from typing import Optional
 
-from platform_messages import PlatformInboundMessage, PlatformOutboundMessage
+from app.core.platform_messages import PlatformInboundMessage, PlatformOutboundMessage
 from telegram import Update
 
-from telegram_io import (
+from app.telegram.telegram_io import (
     reply_text_with_retry,
     send_document_with_retry,
     send_photo_with_retry,

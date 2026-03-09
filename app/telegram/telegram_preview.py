@@ -3,10 +3,10 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from preview_driver import PreviewDriver
+from app.telegram.preview_driver import PreviewDriver
 from telegram import Message, Update
 
-from telegram_io import (
+from app.telegram.telegram_io import (
     delete_message_with_retry,
     edit_message_text_with_retry,
     send_message_with_retry,

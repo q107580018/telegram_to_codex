@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock, patch
 
 from telegram.error import NetworkError, TimedOut
 
-from chat_store import ChatStore
-from config import AppConfig
-from handlers import BotHandlers
-from project_service import ProjectService
+from app.config.chat_store import ChatStore
+from app.config.config import AppConfig
+from app.config.project_service import ProjectService
+from app.telegram.handlers import BotHandlers
 
 
 def build_handlers_for_test(
@@ -96,7 +96,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             coro.close()
             return None
 
-        with patch("handlers.asyncio.create_task", side_effect=consume_task) as create_task:
+        with patch("app.telegram.handlers.asyncio.create_task", side_effect=consume_task) as create_task:
             await handlers.on_error(update=None, context=Ctx())
             create_task.assert_called_once()
 
@@ -125,7 +125,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch("handlers.keep_typing", new=AsyncMock()),
+            patch("app.telegram.handlers.keep_typing", new=AsyncMock()),
         ):
             await handlers.handle_message(update, context=None)
 
@@ -226,7 +226,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=["high"])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.setreasoning(update, context)
 
         self.assertEqual(handlers.chat_reasoning_overrides.get(123), "high")
@@ -243,7 +243,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=["minimal"])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.setreasoning(update, context)
 
         self.assertEqual(handlers.chat_reasoning_overrides.get(123), "minimal")
@@ -263,7 +263,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=["default"])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.setreasoning(update, context)
 
         self.assertNotIn(123, handlers.chat_reasoning_overrides)
@@ -280,7 +280,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=[])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.setreasoning(update, context)
 
         kwargs = reply_mock.await_args.kwargs
@@ -313,7 +313,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=[])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.models(update, context)
 
         reply = reply_mock.await_args.args[1]
@@ -328,7 +328,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=["gpt-5-codex"])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.models(update, context)
 
         self.assertEqual(handlers.config.codex_model, "gpt-5-codex")
@@ -344,7 +344,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=["GPT-5.4"])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.models(update, context)
 
         self.assertEqual(handlers.config.codex_model, "gpt-5.4")
@@ -363,7 +363,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=[])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.models(update, context)
 
         reply = reply_mock.await_args.args[1]
@@ -378,7 +378,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
         update = self._Update(chat_id=123)
         context = self._Context(args=[])
 
-        with patch("handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
+        with patch("app.telegram.handlers.reply_text_with_retry", new=AsyncMock()) as reply_mock:
             await handlers.models(update, context)
 
         kwargs = reply_mock.await_args.kwargs
@@ -425,7 +425,7 @@ class HandlerStabilityTests(unittest.IsolatedAsyncioTestCase):
             coro.close()
             return None
 
-        with patch("handlers.asyncio.create_task", side_effect=consume_task):
+        with patch("app.telegram.handlers.asyncio.create_task", side_effect=consume_task):
             await handlers.post_init(app)
 
 

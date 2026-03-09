@@ -11,19 +11,19 @@ from telegram.ext import (
     filters,
 )
 
-from chat_store import ChatStore
-from config import load_config, migrate_codex_bin_env_if_needed
-from handlers import BotHandlers
-from project_service import ProjectService
+from app.config.chat_store import ChatStore
+from app.config.config import load_config, migrate_codex_bin_env_if_needed
+from app.config.project_service import ProjectService
+from app.telegram.handlers import BotHandlers
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, ".env"))
-LOG_FILE = os.getenv("BOT_LOG_FILE", os.path.join(BASE_DIR, "bot.log"))
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+load_dotenv(os.path.join(REPO_ROOT, ".env"))
+LOG_FILE = os.getenv("BOT_LOG_FILE", os.path.join(REPO_ROOT, "bot.log"))
 
 DEFAULT_MAX_TURNS = 12
 CODEX_MAX_RETRIES = 3
-CHAT_HISTORY_FILE = os.path.join(BASE_DIR, "chat_histories.json")
-UPDATE_STATE_FILE = os.path.join(BASE_DIR, "telegram_update_state.json")
+CHAT_HISTORY_FILE = os.path.join(REPO_ROOT, "chat_histories.json")
+UPDATE_STATE_FILE = os.path.join(REPO_ROOT, "telegram_update_state.json")
 POLLING_TIMEOUT_SEC = 30
 POLLING_BOOTSTRAP_RETRIES = -1
 
@@ -121,14 +121,14 @@ def resolve_telegram_proxy_url(handlers: BotHandlers, logger: logging.Logger) ->
 def build_handlers(logger: logging.Logger) -> BotHandlers:
     config = load_config()
     migrate_codex_bin_env_if_needed(
-        env_path=os.path.join(BASE_DIR, ".env"),
+        env_path=os.path.join(REPO_ROOT, ".env"),
         codex_bin_raw=os.getenv("CODEX_BIN", "codex").strip(),
         resolved_bin=config.codex_bin,
     )
 
     project_service = ProjectService(
         initial_project_dir=config.codex_project_dir,
-        env_path=os.path.join(BASE_DIR, ".env"),
+        env_path=os.path.join(REPO_ROOT, ".env"),
     )
     chat_max_turns = _read_positive_int_env("CHAT_MAX_TURNS", DEFAULT_MAX_TURNS)
     chat_store = ChatStore(history_file=CHAT_HISTORY_FILE, max_turns=chat_max_turns)

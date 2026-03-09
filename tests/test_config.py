@@ -3,13 +3,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from config import load_config
+from app.config.config import load_config
 
 
 class ConfigFeishuTests(unittest.TestCase):
     def test_load_config_defaults_feishu_fields_to_empty(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("config.load_dotenv", return_value=None):
+            with patch("app.config.config.load_dotenv", return_value=None):
                 with patch.dict(
                     os.environ,
                     {
@@ -25,7 +25,7 @@ class ConfigFeishuTests(unittest.TestCase):
 
     def test_load_config_reads_feishu_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("config.load_dotenv", return_value=None):
+            with patch("app.config.config.load_dotenv", return_value=None):
                 with patch.dict(
                     os.environ,
                     {
@@ -43,7 +43,7 @@ class ConfigFeishuTests(unittest.TestCase):
 
     def test_load_config_can_skip_telegram_token_for_feishu_entry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("config.load_dotenv", return_value=None):
+            with patch("app.config.config.load_dotenv", return_value=None):
                 with patch.dict(
                     os.environ,
                     {

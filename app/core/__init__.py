@@ -1,0 +1,1 @@
+"""Shared bridge core modules."""

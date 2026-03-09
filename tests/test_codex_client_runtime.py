@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from codex_client import get_codex_runtime_info
-from config import AppConfig
+from app.core.codex_client import get_codex_runtime_info
+from app.config.config import AppConfig
 
 
 class CodexClientRuntimeTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class CodexClientRuntimeTests(unittest.TestCase):
 
             config = self._build_config(project_dir=tmp)
             with patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}, clear=False):
-                with patch("codex_client.subprocess.run") as mock_run:
+                with patch("app.core.codex_client.subprocess.run") as mock_run:
                     mock_run.side_effect = [
                         type("R", (), {"stdout": "codex-cli 0.106.0", "stderr": "", "returncode": 0})(),
                         type("R", (), {"stdout": "logged in", "stderr": "", "returncode": 0})(),
@@ -79,6 +79,79 @@ class CodexClientRuntimeTests(unittest.TestCase):
             self.assertNotEqual(
                 info["quota"]["source_timestamp_local"], "2026-03-05T14:26:13.049Z"
             )
+
+    def test_runtime_info_falls_back_to_latest_session_with_rate_limits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            codex_home = Path(tmp)
+            session_dir = codex_home / "sessions" / "2026" / "03" / "09"
+            session_dir.mkdir(parents=True, exist_ok=True)
+            older_session = session_dir / "rollout-2026-03-09T18-26-17-older.jsonl"
+            newer_session = session_dir / "rollout-2026-03-09T18-52-09-newer.jsonl"
+
+            older_session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "thread.started", "thread_id": "older"}),
+                        json.dumps(
+                            {
+                                "timestamp": "2026-03-09T10:39:57.824Z",
+                                "type": "event_msg",
+                                "payload": {
+                                    "type": "token_count",
+                                    "rate_limits": {
+                                        "primary": {
+                                            "used_percent": 22.0,
+                                            "window_minutes": 300,
+                                            "resets_at": 1773068334,
+                                        },
+                                        "secondary": {
+                                            "used_percent": 55.0,
+                                            "window_minutes": 10080,
+                                            "resets_at": 1773499241,
+                                        },
+                                        "credits": None,
+                                    },
+                                },
+                            }
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            newer_session.write_text(
+                "\n".join(
+                    [
+                        json.dumps({"type": "thread.started", "thread_id": "newer"}),
+                        json.dumps(
+                            {
+                                "timestamp": "2026-03-09T10:52:09.000Z",
+                                "type": "event_msg",
+                                "payload": {
+                                    "type": "token_count",
+                                    "rate_limits": None,
+                                },
+                            }
+                        ),
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            older_session.touch()
+            newer_session.touch()
+
+            config = self._build_config(project_dir=tmp)
+            with patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}, clear=False):
+                with patch("app.core.codex_client.subprocess.run") as mock_run:
+                    mock_run.side_effect = [
+                        type("R", (), {"stdout": "codex-cli 0.106.0", "stderr": "", "returncode": 0})(),
+                        type("R", (), {"stdout": "logged in", "stderr": "", "returncode": 0})(),
+                    ]
+                    info = get_codex_runtime_info(config)
+
+            self.assertEqual(info["quota"]["primary_used_percent"], 22.0)
+            self.assertEqual(info["quota"]["secondary_used_percent"], 55.0)
+            self.assertEqual(info["quota"]["source_file"], str(older_session))
 
 
 if __name__ == "__main__":

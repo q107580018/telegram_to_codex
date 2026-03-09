@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 from telegram.error import NetworkError, TimedOut
 
-from telegram_io import (
+from app.telegram.telegram_io import (
     extract_image_sources,
     extract_local_image_paths,
     remove_markdown_images,

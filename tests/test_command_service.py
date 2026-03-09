@@ -1,9 +1,9 @@
 import tempfile
 import unittest
 
-from chat_store import ChatStore
-from config import AppConfig
-from project_service import ProjectService
+from app.config.chat_store import ChatStore
+from app.config.config import AppConfig
+from app.config.project_service import ProjectService
 
 
 def build_service(
@@ -12,7 +12,7 @@ def build_service(
     skills_list: list[str] | None = None,
     health_snapshot: dict | None = None,
 ):
-    from command_service import CommandService
+    from app.core.command_service import CommandService
 
     tmpdir = tempfile.TemporaryDirectory()
     env_path = f"{tmpdir.name}/.env"

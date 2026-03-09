@@ -226,7 +226,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var logPath: String { runtimeDir + "/bot.log" }
     private var envPath: String { runtimeDir + "/.env" }
     private var runtimeEnvExamplePath: String { runtimeDir + "/.env.example" }
-    private var runtimePlatformsPath: String { runtimeDir + "/platforms.json" }
+    private var runtimePlatformsPath: String { runtimeDir + "/macos/platforms.json" }
+    private var legacyRuntimePlatformsPath: String { runtimeDir + "/platforms.json" }
     private var bundledEnvExamplePath: String? {
         guard let resourceURL = Bundle.main.resourceURL else {
             return nil
@@ -242,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         return resourceURL
             .appendingPathComponent("BotRuntime")
+            .appendingPathComponent("macos")
             .appendingPathComponent("platforms.json")
             .path
     }
@@ -265,6 +267,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let candidates = [
             runtimePlatformsPath,
             bundledPlatformsPath,
+            legacyRuntimePlatformsPath,
+            FileManager.default.currentDirectoryPath + "/macos/platforms.json",
             FileManager.default.currentDirectoryPath + "/platforms.json",
         ].compactMap { $0 }
 
@@ -1549,6 +1553,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private func removeLegacyRuntimeFiles() {
+        let fm = FileManager.default
+        let legacyFiles = [
+            "platforms.json",
+            "bot.py",
+            "bridge_core.py",
+            "chat_store.py",
+            "codex_client.py",
+            "command_service.py",
+            "config.py",
+            "env_store.py",
+            "feishu_adapter.py",
+            "feishu_bot.py",
+            "feishu_io.py",
+            "feishu_menu.py",
+            "handlers.py",
+            "platform_messages.py",
+            "platform_registry.py",
+            "polling_health.py",
+            "preview_driver.py",
+            "project_service.py",
+            "skills.py",
+            "telegram_adapter.py",
+            "telegram_io.py",
+            "telegram_preview.py",
+            "telegram_update_state.py",
+        ]
+
+        for name in legacyFiles {
+            let path = runtimeDir + "/" + name
+            if fm.fileExists(atPath: path) {
+                try? fm.removeItem(atPath: path)
+            }
+        }
+
+        let legacyCacheDir = runtimeDir + "/__pycache__"
+        if fm.fileExists(atPath: legacyCacheDir) {
+            try? fm.removeItem(atPath: legacyCacheDir)
+        }
+    }
+
     private func bootstrapRuntime() -> String {
         let fm = FileManager.default
         migrateLegacyRuntimeIfNeeded()
@@ -1564,31 +1609,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let bundleRuntime = resourceURL.appendingPathComponent("BotRuntime")
         let requiredRuntimeFiles = [
-            "bot.py",
-            "feishu_bot.py",
+            "app",
+            "macos",
             "requirements.txt",
             ".env.example",
-            "command_service.py",
-            "config.py",
-            "env_store.py",
-            "chat_store.py",
-            "handlers.py",
-            "polling_health.py",
-            "codex_client.py",
-            "project_service.py",
-            "bridge_core.py",
-            "platform_messages.py",
-            "platform_registry.py",
-            "platforms.json",
-            "telegram_io.py",
-            "telegram_adapter.py",
-            "preview_driver.py",
-            "telegram_preview.py",
-            "telegram_update_state.py",
-            "feishu_io.py",
-            "feishu_adapter.py",
-            "feishu_menu.py",
-            "skills.py",
         ]
         let optionalRuntimeFiles = [
             ".env",
@@ -1629,6 +1653,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return "初始化失败：复制 \(name) 失败"
             }
         }
+
+        removeLegacyRuntimeFiles()
 
         if !fm.fileExists(atPath: envPath) {
             guard let templatePath = resolvedEnvExamplePath() else {
@@ -1749,7 +1775,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let botPath = botPath(for: platform)
         let pidPath = pidPath(for: platform)
         let launchLogPath = launchLogPath(for: platform)
-        let runner = "cd \(q(runtimeDir)); env -u ALL_PROXY -u all_proxy BOT_LOG_TO_STDOUT=0 \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1; code=$?; ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"__BC_BOT_EXIT__ code=$code ts=$ts\" >> \(q(launchLogPath))"
+        let pythonPathEnv = "\(runtimeDir):${PYTHONPATH:-}"
+        let runner = "cd \(q(runtimeDir)); env -u ALL_PROXY -u all_proxy BOT_LOG_TO_STDOUT=0 PYTHONPATH=\(q(pythonPathEnv)) \(q(pythonPath)) \(q(botPath)) >> \(q(launchLogPath)) 2>&1; code=$?; ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"__BC_BOT_EXIT__ code=$code ts=$ts\" >> \(q(launchLogPath))"
         let cmd = "cd \(q(runtimeDir)) && : > \(q(launchLogPath)); ts=$(date '+%Y-%m-%d %H:%M:%S'); echo \"[bc-start] ts=$ts python=\(pythonPath) bot=\(botPath) platform=\(platform.id)\" >> \(q(launchLogPath)); if [ -f \(q(pidPath)) ]; then oldpid=$(cat \(q(pidPath)) 2>/dev/null || true); if [ -n \"$oldpid\" ] && ps -p \"$oldpid\" >/dev/null 2>&1; then echo already_running; exit 0; fi; fi; if pgrep -f \(q(botPath)) >/dev/null 2>&1; then echo already_running; exit 0; fi; if [ ! -x \(q(pythonPath)) ]; then echo \"Python runtime missing: \(pythonPath)\" >> \(q(launchLogPath)); echo failed:python_runtime_missing; exit 0; fi; nohup /bin/zsh -lc \(q(runner)) >/dev/null 2>&1 & newpid=$!; echo $newpid > \(q(pidPath)); started=0; for _ in 1 2 3 4 5 6 7 8 9 10; do if ps -p \"$newpid\" >/dev/null 2>&1; then started=1; break; fi; sleep 0.1; done; if [ \"$started\" = \"1\" ]; then echo started; else rm -f \(q(pidPath)); reason=$(tail -n 20 \(q(launchLogPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); if [ -z \"$reason\" ]; then reason=$(tail -n 20 \(q(logPath)) 2>/dev/null | tr -d '\\r' | awk 'NF{line=$0} END{print line}' || true); fi; if [ -z \"$reason\" ]; then reason=process_exited_immediately_without_log; fi; echo failed:\"$reason\"; fi"
         return runShell(cmd).trimmingCharacters(in: .whitespacesAndNewlines)
     }

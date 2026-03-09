@@ -2,11 +2,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bridge_core import BridgeReply
-from command_service import CommandResult
-from config import AppConfig
-from feishu_io import FeishuPrivateTextEvent
-from feishu_bot import (
+from app.core.bridge_core import BridgeReply
+from app.core.command_service import CommandResult
+from app.config.config import AppConfig
+from app.feishu.feishu_io import FeishuPrivateTextEvent
+from app.feishu.feishu_bot import (
     build_command_service,
     build_api_client,
     build_event_handler,
@@ -14,7 +14,7 @@ from feishu_bot import (
     handle_private_text_event,
     main,
 )
-from platform_messages import OutboundPart
+from app.core.platform_messages import OutboundPart
 
 
 class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
@@ -35,7 +35,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         config_ref = {"value": config}
 
         with patch(
-            "feishu_bot.get_codex_runtime_info",
+            "app.feishu.feishu_bot.get_codex_runtime_info",
             return_value={
                 "login": "logged in",
                 "model": "gpt-5",
@@ -81,7 +81,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         config_ref = {"value": config}
 
         with patch(
-            "feishu_bot.list_available_skills",
+            "app.feishu.feishu_bot.list_available_skills",
             return_value=["brainstorming", "systematic-debugging"],
         ) as skills_mock:
             service = build_command_service(
@@ -117,7 +117,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             build=lambda: built_client,
         )
 
-        with patch("feishu_bot.lark.Client.builder", return_value=builder):
+        with patch("app.feishu.feishu_bot.lark.Client.builder", return_value=builder):
             client = build_api_client(config)
 
         self.assertIs(client, built_client)
@@ -152,12 +152,12 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             return func(*args, **kwargs)
 
         with patch(
-            "feishu_bot.asyncio.to_thread",
+            "app.feishu.feishu_bot.asyncio.to_thread",
             new=AsyncMock(side_effect=passthrough_to_thread),
         ) as to_thread, patch(
-            "feishu_bot.add_typing_reaction",
+            "app.feishu.feishu_bot.add_typing_reaction",
             return_value={"reaction_id": "typing_1"},
-        ), patch("feishu_bot.remove_typing_reaction"):
+        ), patch("app.feishu.feishu_bot.remove_typing_reaction"):
             await handle_private_text_event(
                 core=core,
                 client=client,
@@ -200,9 +200,9 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             return func(*args, **kwargs)
 
         with (
-            patch("feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
-            patch("feishu_bot.add_typing_reaction", return_value={"reaction_id": "typing_1"}) as add_mock,
-            patch("feishu_bot.remove_typing_reaction") as remove_mock,
+            patch("app.feishu.feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
+            patch("app.feishu.feishu_bot.add_typing_reaction", return_value={"reaction_id": "typing_1"}) as add_mock,
+            patch("app.feishu.feishu_bot.remove_typing_reaction") as remove_mock,
         ):
             await handle_private_text_event(
                 core=core,
@@ -240,9 +240,9 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             return func(*args, **kwargs)
 
         with (
-            patch("feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
-            patch("feishu_bot.add_typing_reaction", return_value={"reaction_id": "typing_1"}),
-            patch("feishu_bot.remove_typing_reaction"),
+            patch("app.feishu.feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
+            patch("app.feishu.feishu_bot.add_typing_reaction", return_value={"reaction_id": "typing_1"}),
+            patch("app.feishu.feishu_bot.remove_typing_reaction"),
         ):
             await handle_private_text_event(
                 core=core,
@@ -282,9 +282,9 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
             return func(*args, **kwargs)
 
         with (
-            patch("feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
-            patch("feishu_bot.add_typing_reaction", side_effect=RuntimeError("typing boom")) as add_mock,
-            patch("feishu_bot.remove_typing_reaction") as remove_mock,
+            patch("app.feishu.feishu_bot.asyncio.to_thread", new=AsyncMock(side_effect=passthrough_to_thread)),
+            patch("app.feishu.feishu_bot.add_typing_reaction", side_effect=RuntimeError("typing boom")) as add_mock,
+            patch("app.feishu.feishu_bot.remove_typing_reaction") as remove_mock,
         ):
             await handle_private_text_event(
                 core=core,
@@ -328,7 +328,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         with patch(
             "feishu_bot.asyncio.to_thread",
             new=AsyncMock(side_effect=passthrough_to_thread),
-        ), patch("feishu_bot.send_private_text", return_value={"message_id": "om_out"}) as send_mock:
+        ), patch("app.feishu.feishu_bot.send_private_text", return_value={"message_id": "om_out"}) as send_mock:
             await handle_bot_menu_event(
                 client=object(),
                 menu_event=menu_event,
@@ -350,7 +350,7 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         builder.register_p2_application_bot_menu_v6.return_value = builder
         builder.build.return_value = object()
 
-        with patch("feishu_bot.lark.EventDispatcherHandler.builder", return_value=builder):
+        with patch("app.feishu.feishu_bot.lark.EventDispatcherHandler.builder", return_value=builder):
             build_event_handler(core=object(), client_ref={}, logger=MagicMock())
 
         builder.register_p2_application_bot_menu_v6.assert_called_once()
@@ -372,12 +372,12 @@ class FeishuBotTests(unittest.IsolatedAsyncioTestCase):
         ws_client = MagicMock()
 
         with (
-            patch("feishu_bot.setup_logging"),
-            patch("feishu_bot.load_config", return_value=config),
-            patch("feishu_bot.build_bridge_core", return_value=object()),
-            patch("feishu_bot.build_api_client", return_value=object()),
-            patch("feishu_bot.build_event_handler", return_value=object()),
-            patch("feishu_bot.lark.ws.Client", return_value=ws_client),
+            patch("app.feishu.feishu_bot.setup_logging"),
+            patch("app.feishu.feishu_bot.load_config", return_value=config),
+            patch("app.feishu.feishu_bot.build_bridge_core", return_value=object()),
+            patch("app.feishu.feishu_bot.build_api_client", return_value=object()),
+            patch("app.feishu.feishu_bot.build_event_handler", return_value=object()),
+            patch("app.feishu.feishu_bot.lark.ws.Client", return_value=ws_client),
         ):
             result = main()
 

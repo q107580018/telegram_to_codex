@@ -31,7 +31,7 @@ func defaultAppPlatforms() -> [AppPlatformDefinition] {
         AppPlatformDefinition(
             id: "telegram",
             displayName: "Telegram",
-            entryScript: "bot.py",
+            entryScript: "app/telegram/bot.py",
             requiredEnvKeys: ["TELEGRAM_BOT_TOKEN"],
             pidFile: "telegram.pid",
             launchLogFile: "telegram.launch.log",
@@ -41,7 +41,7 @@ func defaultAppPlatforms() -> [AppPlatformDefinition] {
         AppPlatformDefinition(
             id: "feishu",
             displayName: "Feishu",
-            entryScript: "feishu_bot.py",
+            entryScript: "app/feishu/feishu_bot.py",
             requiredEnvKeys: ["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
             pidFile: "feishu.pid",
             launchLogFile: "feishu.launch.log",

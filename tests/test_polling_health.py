@@ -1,6 +1,6 @@
 import unittest
 
-from polling_health import PollingHealthManager
+from app.config.polling_health import PollingHealthManager
 
 
 class PollingHealthManagerTests(unittest.TestCase):

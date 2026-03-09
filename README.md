@@ -8,6 +8,22 @@
 - 支持飞书私聊文本对话
 - 统一通过本机 `codex` 命令执行，不依赖 `OPENAI_API_KEY`
 
+## 目录结构
+
+```text
+app/
+  core/        共享桥接核心与平台无关模型
+  config/      配置、环境与本地状态
+  telegram/    Telegram 入口、适配器、预览与 update state
+  feishu/      飞书入口与适配器
+macos/         Swift 控制器与平台清单
+scripts/       实际启动、停止、构建脚本
+resources/     App 包与图标资源
+tests/         测试；Swift 测试在 tests/swift/
+```
+
+- 根目录只保留仓库入口文件与顶层目录：`start.sh`、`stop.sh`、`build_app.sh`、`README.md`、`requirements.txt` 等
+
 ## 快速开始
 
 ### 1) 准备
@@ -90,7 +106,7 @@ cp .env.example .env
 ./stop.sh
 ```
 
-`stop.sh` 会同时识别并停止 `bot.py` 和 `feishu_bot.py`。
+`stop.sh` 会同时识别并停止 `app/telegram/bot.py` 和 `app/feishu/feishu_bot.py`。
 
 ## 平台配置差异
 
@@ -182,10 +198,10 @@ FEISHU_APP_SECRET=xxx
 
 ## macOS 控制器 App
 
-- `CodexBridge.app` 为自包含控制器，会内置 `bot.py`、`.env`、`requirements` 等运行资源
+- `resources/CodexBridge.app` 为自包含控制器，会内置运行所需的 `app/`、`macos/`、`.env.example`、`requirements.txt`
 - 首次启动会自动在 `~/Library/Application Support/CodexBridge/runtime` 初始化运行环境
 - App 内可一键启动/停止，关闭窗口会自动停止 bot
-- 如果修改了 `bot.py`、`BotControlMac.swift` 或运行时相关脚本，需要重新执行：
+- 如果修改了 `app/telegram/bot.py`、`macos/BotControlMac.swift` 或运行时相关脚本，需要重新执行：
 
 ```bash
 ./build_app.sh
@@ -193,8 +209,8 @@ FEISHU_APP_SECRET=xxx
 
 该脚本会自动完成：
 
-- 同步 `CodexBridge.app/Contents/Resources/BotRuntime` 资源
-- 重新编译 `CodexBridge.app/Contents/MacOS/CodexBridge`
+- 同步 `resources/CodexBridge.app/Contents/Resources/BotRuntime` 资源
+- 重新编译 `resources/CodexBridge.app/Contents/MacOS/CodexBridge`
 - 重签名并执行 `codesign --verify` 校验
 
 ## 说明

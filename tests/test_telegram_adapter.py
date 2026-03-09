@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from platform_messages import OutboundPart, PlatformOutboundMessage
-from telegram_adapter import TelegramAdapter
+from app.core.platform_messages import OutboundPart, PlatformOutboundMessage
+from app.telegram.telegram_adapter import TelegramAdapter
 
 
 class TelegramAdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -19,9 +19,9 @@ class TelegramAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch("telegram_adapter.reply_text_with_retry", new=AsyncMock()) as reply_mock,
+            patch("app.telegram.telegram_adapter.reply_text_with_retry", new=AsyncMock()) as reply_mock,
             patch(
-                "telegram_adapter.send_photo_with_retry",
+                "app.telegram.telegram_adapter.send_photo_with_retry",
                 new=AsyncMock(return_value=(True, "")),
             ) as photo_mock,
         ):

@@ -1,9 +1,9 @@
 from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
-from bridge_core import BridgeCore
-from config import AppConfig, normalize_reasoning_effort
-from env_store import read_env_key
+from app.core.bridge_core import BridgeCore
+from app.config.config import AppConfig, normalize_reasoning_effort
+from app.config.env_store import read_env_key
 
 
 @dataclass(frozen=True)

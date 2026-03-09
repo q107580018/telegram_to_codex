@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-from env_store import upsert_env_key
+from app.config.env_store import upsert_env_key
 
 
 @dataclass(frozen=True)

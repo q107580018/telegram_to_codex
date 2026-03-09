@@ -4,27 +4,27 @@ import time
 from dataclasses import replace
 from typing import Optional
 
-from bridge_core import BridgeCore
-from command_service import CommandResult, CommandService, render_status_text
-from preview_driver import PreviewDriver
+from app.config.chat_store import ChatStore
+from app.config.config import AppConfig, normalize_reasoning_effort
+from app.config.env_store import read_env_key
+from app.config.polling_health import PollingHealthManager
+from app.config.project_service import ProjectService
+from app.core.bridge_core import BridgeCore
+from app.core.codex_client import ask_codex_with_meta, get_codex_runtime_info
+from app.core.command_service import CommandResult, CommandService, render_status_text
+from app.core.skills import list_available_skills
+from app.telegram.preview_driver import PreviewDriver
+from app.telegram.telegram_adapter import TelegramAdapter
+from app.telegram.telegram_io import keep_typing, reply_text_with_retry
+from app.telegram.telegram_preview import TelegramPreviewDriver
+from app.telegram.telegram_update_state import (
+    RecentUpdateDedupe,
+    load_update_state,
+    save_update_state,
+)
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import ContextTypes
-
-from chat_store import ChatStore
-from codex_client import ask_codex_with_meta, get_codex_runtime_info
-from config import AppConfig, normalize_reasoning_effort
-from polling_health import PollingHealthManager
-from project_service import ProjectService
-from skills import list_available_skills
-from telegram_adapter import TelegramAdapter
-from env_store import read_env_key
-from telegram_preview import TelegramPreviewDriver
-from telegram_io import (
-    keep_typing,
-    reply_text_with_retry,
-)
-from telegram_update_state import RecentUpdateDedupe, load_update_state, save_update_state
 
 
 class BotHandlers:

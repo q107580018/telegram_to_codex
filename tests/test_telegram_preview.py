@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from telegram.error import NetworkError
 
-from telegram_preview import TelegramPreviewDriver
+from app.telegram.telegram_preview import TelegramPreviewDriver
 
 
 class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
@@ -13,7 +13,8 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
         update = SimpleNamespace(message=SimpleNamespace())
 
         with patch(
-            "telegram_preview.send_message_with_retry", new=AsyncMock(return_value=message)
+            "app.telegram.telegram_preview.send_message_with_retry",
+            new=AsyncMock(return_value=message),
         ) as send_mock:
             driver = TelegramPreviewDriver(update, throttle_sec=0)
             await driver.start()
@@ -26,11 +27,12 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=message),
             ),
             patch(
-                "telegram_preview.edit_message_text_with_retry", new=AsyncMock()
+                "app.telegram.telegram_preview.edit_message_text_with_retry",
+                new=AsyncMock(),
             ) as edit_mock,
         ):
             driver = TelegramPreviewDriver(update, throttle_sec=0)
@@ -46,11 +48,12 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=message),
             ),
             patch(
-                "telegram_preview.edit_message_text_with_retry", new=AsyncMock()
+                "app.telegram.telegram_preview.edit_message_text_with_retry",
+                new=AsyncMock(),
             ) as edit_mock,
         ):
             driver = TelegramPreviewDriver(update, throttle_sec=60)
@@ -66,11 +69,12 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=message),
             ),
             patch(
-                "telegram_preview.delete_message_with_retry", new=AsyncMock(return_value=True)
+                "app.telegram.telegram_preview.delete_message_with_retry",
+                new=AsyncMock(return_value=True),
             ) as delete_mock,
         ):
             driver = TelegramPreviewDriver(update, throttle_sec=0)
@@ -85,11 +89,12 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=message),
             ),
             patch(
-                "telegram_preview.edit_message_text_with_retry", new=AsyncMock(return_value=True)
+                "app.telegram.telegram_preview.edit_message_text_with_retry",
+                new=AsyncMock(return_value=True),
             ) as edit_mock,
         ):
             driver = TelegramPreviewDriver(update, throttle_sec=0)
@@ -103,11 +108,12 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=None),
             ),
             patch(
-                "telegram_preview.edit_message_text_with_retry", new=AsyncMock()
+                "app.telegram.telegram_preview.edit_message_text_with_retry",
+                new=AsyncMock(),
             ) as edit_mock,
         ):
             driver = TelegramPreviewDriver(update, throttle_sec=0)
@@ -122,11 +128,11 @@ class TelegramPreviewDriverTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "telegram_preview.send_message_with_retry",
+                "app.telegram.telegram_preview.send_message_with_retry",
                 new=AsyncMock(return_value=message),
             ),
             patch(
-                "telegram_preview.edit_message_text_with_retry",
+                "app.telegram.telegram_preview.edit_message_text_with_retry",
                 new=AsyncMock(side_effect=NetworkError("down")),
             ) as edit_mock,
         ):

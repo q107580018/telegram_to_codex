@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from codex_client import ask_codex_with_meta
-from config import AppConfig
+from app.core.codex_client import ask_codex_with_meta
+from app.config.config import AppConfig
 
 
 class _Result:
@@ -34,7 +34,7 @@ class CodexClientReasoningTests(unittest.TestCase):
                 '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}',
             ]
         )
-        with patch("codex_client.subprocess.run", return_value=_Result(0, stdout=fake_stdout)) as run_mock:
+        with patch("app.core.codex_client.subprocess.run", return_value=_Result(0, stdout=fake_stdout)) as run_mock:
             reply, _ = ask_codex_with_meta(config, "hello", reasoning_effort="high")
 
         called_cmd = run_mock.call_args.args[0]
@@ -45,7 +45,7 @@ class CodexClientReasoningTests(unittest.TestCase):
     def test_passes_reasoning_effort_from_config_default(self):
         config = self._build_config(default_effort="medium")
         fake_stdout = '{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}'
-        with patch("codex_client.subprocess.run", return_value=_Result(0, stdout=fake_stdout)) as run_mock:
+        with patch("app.core.codex_client.subprocess.run", return_value=_Result(0, stdout=fake_stdout)) as run_mock:
             ask_codex_with_meta(config, "hello")
 
         called_cmd = run_mock.call_args.args[0]
