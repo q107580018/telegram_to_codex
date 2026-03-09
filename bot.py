@@ -23,6 +23,7 @@ LOG_FILE = os.getenv("BOT_LOG_FILE", os.path.join(BASE_DIR, "bot.log"))
 DEFAULT_MAX_TURNS = 12
 CODEX_MAX_RETRIES = 3
 CHAT_HISTORY_FILE = os.path.join(BASE_DIR, "chat_histories.json")
+UPDATE_STATE_FILE = os.path.join(BASE_DIR, "telegram_update_state.json")
 POLLING_TIMEOUT_SEC = 30
 POLLING_BOOTSTRAP_RETRIES = -1
 
@@ -164,6 +165,7 @@ def build_handlers(logger: logging.Logger) -> BotHandlers:
         polling_escalate_exit_code=_read_positive_int_env(
             "TELEGRAM_ESCALATE_EXIT_CODE", 75
         ),
+        update_state_path=UPDATE_STATE_FILE,
     )
 
 

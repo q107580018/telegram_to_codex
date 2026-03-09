@@ -33,6 +33,32 @@ async def send_message_with_retry(update: Update, text: str) -> Optional[Message
     return None
 
 
+async def edit_message_text_with_retry(message: Message, text: str) -> bool:
+    for i in range(3):
+        try:
+            await message.edit_text(text)
+            return True
+        except (TimedOut, NetworkError):
+            if i == 2:
+                raise
+            await asyncio.sleep(0.8 * (2**i))
+    return False
+
+
+async def delete_message_with_retry(message: Message) -> bool:
+    for i in range(3):
+        try:
+            await message.delete()
+            return True
+        except (TimedOut, NetworkError):
+            if i == 2:
+                return False
+            await asyncio.sleep(0.8 * (2**i))
+        except Exception:
+            return False
+    return False
+
+
 def extract_local_image_paths(text: str, base_dir: Optional[str] = None) -> list[str]:
     local_paths, _, _ = extract_image_sources(text=text, base_dir=base_dir)
     return local_paths

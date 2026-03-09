@@ -6,6 +6,7 @@ from typing import Optional
 
 from bridge_core import BridgeCore
 from command_service import CommandResult, CommandService, render_status_text
+from preview_driver import PreviewDriver
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import Conflict, NetworkError, TimedOut
 from telegram.ext import ContextTypes
@@ -18,11 +19,12 @@ from project_service import ProjectService
 from skills import list_available_skills
 from telegram_adapter import TelegramAdapter
 from env_store import read_env_key
+from telegram_preview import TelegramPreviewDriver
 from telegram_io import (
     keep_typing,
     reply_text_with_retry,
-    send_message_with_retry,
 )
+from telegram_update_state import RecentUpdateDedupe, load_update_state, save_update_state
 
 
 class BotHandlers:
@@ -44,6 +46,8 @@ class BotHandlers:
         polling_max_restarts_per_window: int,
         polling_restart_window_sec: float,
         polling_escalate_exit_code: int,
+        update_state_path: Optional[str] = None,
+        preview_driver_factory=None,
     ):
         self.config = config
         self.project_service = project_service
@@ -68,6 +72,13 @@ class BotHandlers:
             resolve_asset_base_dir=lambda: self.project_service.project_dir,
         )
         self.telegram_adapter = TelegramAdapter()
+        self.update_state_path = update_state_path
+        self.recent_updates = RecentUpdateDedupe()
+        self.last_handled_update_id: Optional[int] = None
+        self.preview_driver_factory = preview_driver_factory or (
+            lambda update: TelegramPreviewDriver(update)
+        )
+        self._load_update_state()
 
         self.polling_health = PollingHealthManager(
             restart_threshold=polling_restart_threshold,
@@ -89,6 +100,39 @@ class BotHandlers:
                 now=time.monotonic()
             ),
         )
+
+    def _load_update_state(self) -> None:
+        if not self.update_state_path:
+            self.last_handled_update_id = None
+            return
+        state = load_update_state(self.update_state_path)
+        self.last_handled_update_id = state.get("last_handled_update_id")
+
+    def _save_update_state(self) -> None:
+        if not self.update_state_path:
+            return
+        try:
+            save_update_state(
+                self.update_state_path,
+                {"last_handled_update_id": self.last_handled_update_id},
+            )
+        except Exception as exc:
+            self.logger.warning("写入 Telegram update state 失败：%s", exc)
+
+    def _begin_update(self, update: Update) -> bool:
+        update_id = getattr(update, "update_id", None)
+        if not isinstance(update_id, int):
+            return True
+        if (
+            self.last_handled_update_id is not None
+            and update_id <= self.last_handled_update_id
+        ):
+            return False
+        if self.recent_updates.seen(update_id):
+            return False
+        self.last_handled_update_id = update_id
+        self._save_update_state()
+        return True
 
     def _set_config(self, next_config: AppConfig) -> None:
         self.config = next_config
@@ -207,6 +251,8 @@ class BotHandlers:
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -221,6 +267,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -232,6 +280,8 @@ class BotHandlers:
 
     async def skills(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -243,6 +293,8 @@ class BotHandlers:
 
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -274,6 +326,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -306,6 +360,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             if update.callback_query:
                 await update.callback_query.answer("你没有权限使用这个 bot。", show_alert=True)
@@ -374,6 +430,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -393,6 +451,8 @@ class BotHandlers:
 
     async def models(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -433,6 +493,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             if update.callback_query:
                 await update.callback_query.answer("你没有权限使用这个 bot。", show_alert=True)
@@ -474,6 +536,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -485,6 +549,8 @@ class BotHandlers:
 
     async def history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -564,6 +630,8 @@ class BotHandlers:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         self.mark_polling_healthy()
+        if not self._begin_update(update):
+            return
         if not self.is_allowed(update):
             await reply_text_with_retry(update, "你没有权限使用这个 bot。")
             return
@@ -586,9 +654,9 @@ class BotHandlers:
 
         self.logger.info("[chat:%s user:%s] USER: %s", chat_id, user_id, user_text)
 
-        status_msg = await send_message_with_retry(
-            update, "已收到，正在思考中，请稍等..."
-        )
+        preview: PreviewDriver = self.preview_driver_factory(update)
+        await preview.start()
+        await preview.update("已收到，正在请求 Codex...")
         stop_typing_event = asyncio.Event()
         typing_task = asyncio.create_task(keep_typing(update, stop_typing_event))
         typing_stopped = False
@@ -608,16 +676,13 @@ class BotHandlers:
             )
 
             await stop_typing_once()
+            await preview.update("Codex 已返回，正在发送回复...")
+            await preview.finalize()
             await self.telegram_adapter.send_outbound(
                 update,
                 outbound,
                 logger=self.logger,
             )
-            if status_msg:
-                try:
-                    await status_msg.delete()
-                except Exception:
-                    pass
 
         except Exception as exc:
             self.logger.exception("Codex request failed")
@@ -628,13 +693,10 @@ class BotHandlers:
                 user_text,
                 exc,
             )
-            if status_msg:
-                try:
-                    await status_msg.edit_text("处理失败，正在返回错误信息。")
-                except Exception:
-                    pass
             await stop_typing_once()
-            await reply_text_with_retry(update, f"请求失败：{exc}")
+            await preview.fail(f"请求失败：{exc}")
+            if not getattr(preview, "has_active_message", False):
+                await reply_text_with_retry(update, f"请求失败：{exc}")
         finally:
             stop_typing_event.set()
             await typing_task

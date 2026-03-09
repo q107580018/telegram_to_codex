@@ -98,7 +98,8 @@ cp .env.example .env
 
 - 平台形态：机器人会话
 - 输入类型：文本为主，也支持从 Codex 回复中的 Markdown 图片自动转成 Telegram 图片消息
-- 运行方式：轮询模式 `run_polling`
+- 输出反馈：请求处理中会使用单条预览消息展示阶段状态，最终再发送正式回复
+- 运行方式：轮询模式 `run_polling`，并在本地保存 update state 以降低重启后的重复处理
 - 适合场景：个人常驻 bot、本机代理环境、已有 Telegram 使用习惯
 
 ### 飞书
@@ -126,7 +127,9 @@ cp .env.example .env
 ### 说明
 
 - 当前使用轮询模式，适合本地快速使用
+- 处理请求时会先发送一条预览消息，并在“请求 Codex / 发送回复”等阶段更新状态
 - 内置睡眠唤醒检测看门狗，检测到事件循环长停顿会自动重启 polling
+- 会在运行目录保存 `telegram_update_state.json`，用于降低网络抖动或重启后的重复 update 处理
 - 当 Codex 回复包含 Markdown 图片 `![](/绝对路径/demo.png)` 时，会自动发送 Telegram 图片消息
 - 普通 Markdown 链接 `[]()` 不会被当成图片发送
 

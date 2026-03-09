@@ -58,6 +58,9 @@ class ShellScriptTests(unittest.TestCase):
             "platform_registry.py",
             "platforms.json",
             "telegram_adapter.py",
+            "preview_driver.py",
+            "telegram_preview.py",
+            "telegram_update_state.py",
             "feishu_io.py",
             "feishu_adapter.py",
         ]:
@@ -70,6 +73,9 @@ class ShellScriptTests(unittest.TestCase):
             "feishu_menu.py",
             "feishu_bot.py",
             "handlers.py",
+            "preview_driver.py",
+            "telegram_preview.py",
+            "telegram_update_state.py",
             "skills.py",
         ]:
             self.assertIn(f'"{name}"', source)
